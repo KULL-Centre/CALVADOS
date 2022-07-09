@@ -1,0 +1,18 @@
+name: calvados
+dependencies:
+  - python=3.8
+  - jinja2
+  - matplotlib
+  - notebook
+  - numpy
+  - openpyxl
+  - pandas
+  - scikit-learn
+  - scipy
+  - xlrd
+  - cython
+  - pip
+  - conda-forge::hoomd
+  - conda-forge::openmm==7.5
+  - conda-forge::mdtraj
+  - conda-forge::mdanalysis==1.0
