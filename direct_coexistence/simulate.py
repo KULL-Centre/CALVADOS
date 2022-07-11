@@ -36,7 +36,6 @@ def simulate(residues,name,prot,temp,cutoff):
         Nsteps = int(6e7)
     else:
         Lz = 10*L
-        Nsteps = int(6e7)
 
     system = openmm.System()
 
