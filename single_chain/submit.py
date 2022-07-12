@@ -12,8 +12,8 @@ submission = Template("""#!/bin/sh
 #SBATCH --partition=sbinlab_ib2
 #SBATCH --mem=1GB
 #SBATCH -t 20:00:00
-#SBATCH -o {{name}}.err
-#SBATCH -e {{name}}.out
+#SBATCH -o {{name}}.out
+#SBATCH -e {{name}}.err
 
 source /groups/sbinlab/giulio/.bashrc
 conda activate calvados
@@ -21,12 +21,12 @@ conda activate calvados
 python ./simulate.py --name {{name}} --cutoff {{cutoff}}""")
 
 def initProteins():
-    proteins = pd.DataFrame(columns=['temp','pH','ionic','fasta'],dtype=object)
+    proteins = pd.DataFrame(columns=['temp','pH','ionic','fasta','N'],dtype=object)
 
     # DOI: 10.1073/pnas.1322611111
     fasta_ACTR = """GTQNRPLLRNSLDDLVGPPSNLEGQSDERALLDQLHTLLSNTDATGLEEIDRALGIPELVNQGQALEPKQD""".replace('\n', '') 
 
-    proteins.loc['ACTR'] = dict(temp=278,pH=7.4,fasta=list(fasta_ACTR),ionic=0.2)
+    proteins.loc['ACTR'] = dict(temp=278,pH=7.4,fasta=list(fasta_ACTR),ionic=0.2,N=len(fasta_ACTR))
     return proteins
 
 proteins = initProteins()

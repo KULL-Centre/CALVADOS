@@ -24,7 +24,7 @@ Authors
 
 [Giulio Tesei (@gitesei)](https://github.com/gitesei)
 
-Thea K. Schulze
+[Thea K. Schulze (@theaschulze)](https://github.com/theaschulze)
 
 [Ramon Crehuet (@rcrehuet)](https://github.com/rcrehuet)
 

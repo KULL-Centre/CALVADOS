@@ -3,6 +3,9 @@ import hoomd.md
 from hoomd import azplugins
 import time
 import itertools
+import pandas as pd
+import numpy as np
+import mdtraj as md
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
@@ -37,6 +40,23 @@ def genParams(r,prot):
     pairs = np.array(list(itertools.combinations_with_replacement(types,2)))
     return yukawa_kappa, yukawa_eps, types, pairs, fasta, r
 
+def centerDCD(residues,name,prot):
+    top = md.Topology()
+    chain = top.add_chain()
+    for resname in prot.fasta:
+        residue = top.add_residue(residues.loc[resname,'three'], chain)
+        top.add_atom(residues.loc[resname,'three'], element=md.element.carbon, residue=residue)
+    for i in range(len(prot.fasta)-1):
+        top.add_bond(top.atom(i),top.atom(i+1))
+    traj = md.load('{:s}/{:s}.gsd'.format(name,name))[100:]
+    traj.top = top
+    traj = traj.image_molecules(inplace=False, anchor_molecules=[set(traj.top.chain(0).atoms)], make_whole=True)
+    traj.center_coordinates()
+    traj.xyz += traj.unitcell_lengths[0,0]/2
+    print('Number of frames: {:d}'.format(traj.n_frames))
+    traj.save_dcd('{:s}/{:s}.dcd'.format(name,name))
+    traj[0].save_pdb('{:s}/{:s}.pdb'.format(name,name))
+
 def simulate(residues,name,prot,cutoff):
     hoomd.context.initialize("--mode=cpu --nthreads=1");
     hoomd.option.set_notice_level(1)
@@ -53,9 +73,9 @@ def simulate(residues,name,prot,cutoff):
                             index=residues.lambdas.index,columns=residues.lambdas.index)
 
     N_res = prot.N
-    L = N_res*.38+1
+    L = (N_res-1)*.38+4
     N_save = 3000 if N_res < 100 else int(np.ceil(3e-4*N_res**2)*1000)
-    N_steps = 1600*N_save
+    N_steps = 1100*N_save
 
     snapshot = hoomd.data.make_snapshot(N=N_res,
                                 box=hoomd.data.boxdim(Lx=L, Ly=L, Lz=L),
@@ -107,6 +127,7 @@ def simulate(residues,name,prot,cutoff):
     hoomd.dump.gsd(filename='{:s}/{:s}.gsd'.format(name,name), period=N_save, group=hoomd.group.all(), overwrite=True);
 
     hoomd.run(N_steps)
+    centerDCD(residues,name,prot)
 
 residues = pd.read_csv('residues.csv').set_index('one',drop=False)
 
