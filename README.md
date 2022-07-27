@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6914054.svg)](https://doi.org/10.5281/zenodo.6914054)
+
 # CALVADOS
 ### Coarse-graining Approach to Liquid-liquid phase separation Via an Automated Data-driven Optimisation Scheme 
 
