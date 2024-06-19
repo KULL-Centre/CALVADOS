@@ -13,8 +13,7 @@ submission = Template("""#!/bin/sh
 #SBATCH -o {{path}}/out
 #SBATCH -e {{path}}/err
 
-source /groups/sbinlab/giulio/.bashrc
-conda activate hoomd
+conda activate calvados
 
 python ./simulate.py --seq_name {{seq_name}} --path {{path}}""")
 

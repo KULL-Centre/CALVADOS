@@ -9,7 +9,7 @@ This repository contains Python code to run coarse-grained molecular dynamics si
 
 ### Layout
 
-- `single_chain/` Python code to run single-chain simulations of IDPs using the CALVADOS model. `python submit.py` submits a simulation of a single ACTR chain on a single CPU.
+- `single_chain/` Python code to run single-chain simulations of IDPs using the CALVADOS model. `python submit_local.py` runs a simulation of a single ACTR chain on a single CPU.
 - `direct_coexistence/` Python code to run multi-chain simulations of IDPs using the CALVADOS model in slab geometry. `python submit.py` submits a direct-coexistence simulation of 100 A1 LCD chains on a single GPU.
 
 In the examples, direct-coexistence and single-chain simulations are performed using [openMM](https://openmm.org/) and [HOOMD-blue](https://hoomd-blue.readthedocs.io/en/latest/) installed with [mphowardlab/azplugins](https://github.com/mphowardlab/azplugins), respectively.

@@ -5,8 +5,7 @@ import pandas as pd
 
 submission = Template("""#!/bin/sh
 
-source /groups/sbinlab/giulio/.bashrc
-conda activate hoomd
+conda activate calvados
 
 python ./simulate.py --seq_name {{seq_name}} --path {{path}}""")
 
