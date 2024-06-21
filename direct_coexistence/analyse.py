@@ -6,7 +6,7 @@ import os
 import MDAnalysis
 from MDAnalysis import transformations
 
-def initProteins():
+def init_proteins():
     proteins = pd.DataFrame(columns=['eps_factor','pH','ionic','fasta'])
     fasta_A1 = """GSMASASSSQRGRSGSGNFGGGRGGGFGGNDNFGRGGNFSGRGGFGGSRGGGGYGGSGDGYNGFGNDGSNFGGGGSYNDFGNYNNQ
 SSNFGPMKGGNFGGRSSGGSGGGGQYFAKPRNQGGYGGSSSSSSYGSGRRF""".replace('\n', '')
@@ -47,7 +47,7 @@ SSNYGPMKGGNYGGRSSGGSGGGGQYYAKPRNQGGYGGSSSSSSYGSGRRY""".replace('\n', '')
     fasta_M9FP3Y = """GSMASASSSQRGRSGSGNFGGGRGGGYGGNDNGGRGGNYSGRGGFGGSRGGGGYGGSGDGYNGGGNDGSNYGGGGSYNDSGNGNNQ
 SSNFGPMKGGNYGGRSSGGSGGGGQYGAKPRNQGGYGGSSSSSSYGSGRRS""".replace('\n', '')
     fasta_A1S = """GSMASASSSQRGRSGSGNFGGGRGGGFGGNDNFGRGGNFSGRGGFGGSRGGGGYGGSGDGYNGFGNDGSNFGGGGNYNNQ
-SSNFGPMKGGNFGGRSSGPYGGGGQYFAKPRNQGGYGGSSSSSSYGSGRRF""".replace('\n', '') 
+SSNFGPMKGGNFGGRSSGPYGGGGQYFAKPRNQGGYGGSSSSSSYGSGRRF""".replace('\n', '')
     fasta_LAF1 = """MESNQSNNGGSGNAALNRGGRYVPPHLRGGDGGAAAAASAGGDDRRGGAGGGGYRRGGGNSGGGGGGG
 YDRGYNDNRDDRDNRGGSGGYGRDRNYEDRGYNGGGGGGGNRGYNNNRGGGGGGYNRQDRGDGGSSNFSRGG
 YNNRDEGSDNRGSGRSYNNDRRDNGGDGLEHHHHHH""".replace('\n', '')
@@ -159,98 +159,61 @@ def genParamsDH(df,name,prot,temp):
     yukawa_kappa = np.sqrt(8*np.pi*lB*prot.ionic*6.022/10)
     return yukawa_eps, yukawa_kappa
 
-def genDCD(residues,name,prot,temp,n_chains):
-    path = '{:s}/{:d}'.format(name,temp)
-    top = md.Topology()
-    for _ in range(n_chains):
-        chain = top.add_chain()
-        for resname in prot.fasta:
-            residue = top.add_residue(residues.loc[resname,'three'], chain)
-            top.add_atom(residues.loc[resname,'three'], 
-                         element=md.element.carbon, residue=residue)
-        for i in range(chain.n_atoms-1):
-            top.add_bond(chain.atom(i),chain.atom(i+1))
+def calc_zpatch(z,h):
+    cutoff = 0
+    ct = 0.
+    ct_max = 0.
+    zwindow = []
+    hwindow = []
+    zpatch = []
+    hpatch = []
+    for ix, x in enumerate(h):
+        if x > cutoff:
+            ct += x
+            zwindow.append(z[ix])
+            hwindow.append(x)
+        else:
+            if ct > ct_max:
+                ct_max = ct
+                zpatch = zwindow
+                hpatch = hwindow
+            ct = 0.
+            zwindow = []
+            hwindow = []
+    zpatch = np.array(zpatch)
+    hpatch = np.array(hpatch)
+    return zpatch, hpatch
 
-    t = md.load(path+'/{:s}.dcd'.format(name),top=top)
-    t.xyz *= 10
-    t.unitcell_lengths *= 10
-    lz = t.unitcell_lengths[0,2]
-    edges = np.arange(-lz/2.,lz/2.,1)
-    dz = (edges[1]-edges[0])/2.
-    z = edges[:-1]+dz
-    h = np.apply_along_axis(lambda a: np.histogram(a,bins=edges)[0], 1, t.xyz[:,:,2])
-    zmid = np.apply_along_axis(lambda a: z[a.argmax()], 1, h)
-    indices = np.argmin(np.abs(t.xyz[:,:,2]-zmid[:,np.newaxis]),axis=1)
-    t[0].save_pdb(path+'/top.pdb')
-    t.save_dcd(path+'/traj4.dcd')
-
-    u = MDAnalysis.Universe(path+'/top.pdb',path+'/traj4.dcd')
+def center_slab(name,start=None,end=None,step=1,input_pdb='top.pdb'):
+    path = f'{name:s}'
+    u = MDAnalysis.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
+    n_frames = len(u.trajectory[start:end:step])
     ag = u.atoms
-    with MDAnalysis.Writer(path+'/traj3.dcd', ag.n_atoms) as W:
-        for ts,ndx in zip(u.trajectory,indices): 
-            ts = transformations.unwrap(ag)(ts)
-            ts = transformations.center_in_box(
-                u.select_atoms('index {:d}'.format(ndx)), center='geometry')(ts)
+    n_atoms = ag.n_atoms
+    L = u.dimensions[0]/10
+    lz = u.dimensions[2]
+    edges = np.arange(0,lz+1,1)
+    dz = (edges[1] - edges[0]) / 2.
+    z = edges[:-1] + dz
+    n_bins = len(z)
+    hs = np.zeros((n_frames,n_bins))
+    with MDAnalysis.Writer(f'{path:s}/traj.dcd',n_atoms) as W:
+        for t,ts in enumerate(u.trajectory[start:end:step]):
+            # shift max density to center
+            zpos = ag.positions.T[2]
+            h, e = np.histogram(zpos,bins=edges)
+            zmax = z[np.argmax(h)]
+            ag.translate(np.array([0,0,-zmax+0.5*lz]))
             ts = transformations.wrap(ag)(ts)
-            W.write(ag)
-
-    t = md.load(path+'/traj3.dcd',top=path+'/top.pdb')
-    edges = np.arange(0,lz,1)
-    dz = (edges[1]-edges[0])/2.
-    z = edges[:-1]+dz
-    h = np.apply_along_axis(lambda a: np.histogram(a,bins=edges)[0], 1, t.xyz[:,:,2])
-    h = np.mean(h[:120],axis=0)
-    maxoverlap = np.apply_along_axis(lambda a: np.correlate(h,np.histogram(a,
-                bins=edges)[0], 'full').argmax()-h.size+dz, 1, t.xyz[:,:,2])
-
-    u = MDAnalysis.Universe(path+'/top.pdb',path+'/traj3.dcd')
-    ag = u.atoms
-    with MDAnalysis.Writer(path+'/traj2.dcd', ag.n_atoms) as W:
-        for ts,mo in zip(u.trajectory,maxoverlap):
-            ts = transformations.unwrap(ag)(ts)
-            ts = transformations.translate([0,0,mo*10])(ts)  
+            zpos = ag.positions.T[2]
+            h, e = np.histogram(zpos, bins=edges)
+            zpatch, hpatch = calc_zpatch(z,h)
+            zmid = np.average(zpatch,weights=hpatch)
+            ag.translate(np.array([0,0,-zmid+0.5*lz]))
             ts = transformations.wrap(ag)(ts)
+            zpos = ag.positions.T[2]
+            h, e = np.histogram(zpos,bins=edges)
+            hs[t] = h
             W.write(ag)
-
-    t = md.load(path+'/traj2.dcd',top=path+'/top.pdb')
-    h = np.apply_along_axis(lambda a: np.histogram(a,bins=edges)[0], 1, t.xyz[:,:,2])
-    zmid = np.apply_along_axis(lambda a: z[a>np.quantile(a,.98)].mean(), 1, h)
-    indices = np.argmin(np.abs(t.xyz[:,:,2]-zmid[:,np.newaxis]),axis=1)
-
-    u = MDAnalysis.Universe(path+'/top.pdb',path+'/traj2.dcd')
-    ag = u.atoms
-    with MDAnalysis.Writer(path+'/traj1.dcd', ag.n_atoms) as W:
-        for ts,ndx in zip(u.trajectory,indices): 
-            ts = transformations.unwrap(ag)(ts)
-            ts = transformations.center_in_box(
-                u.select_atoms('index {:d}'.format(ndx)), center='geometry')(ts)
-            ts = transformations.wrap(ag)(ts)
-            W.write(ag)
-
-    t = md.load(path+'/traj1.dcd',top=path+'/top.pdb')
-    h = np.apply_along_axis(lambda a: np.histogram(a,bins=edges)[0], 1, t.xyz[:,:,2])
-    h = np.mean(h[120:],axis=0)
-    maxoverlap = np.apply_along_axis(lambda a: np.correlate(h,np.histogram(a,
-                bins=edges)[0], 'full').argmax()-h.size+dz, 1, t.xyz[:,:,2])
-
-    u = MDAnalysis.Universe(path+'/top.pdb',path+'/traj1.dcd')
-    ag = u.atoms
-    with MDAnalysis.Writer(path+'/traj.dcd', ag.n_atoms) as W:
-        for ts,mo in zip(u.trajectory,maxoverlap):
-            ts = transformations.unwrap(ag)(ts)
-            ts = transformations.translate([0,0,mo*10])(ts)  
-            ts = transformations.wrap(ag)(ts)
-            W.write(ag)
-   
-    t = md.load(path+'/traj.dcd',top=path+'/top.pdb')
-
-    h = np.apply_along_axis(lambda a: np.histogram(a,bins=edges)[0], 1, t.xyz[:,:,2])
-    np.save('{:s}_{:d}.npy'.format(name,temp),h,allow_pickle=False)
-    os.remove(path+'/traj1.dcd')
-    os.remove(path+'/traj2.dcd')
-    os.remove(path+'/traj3.dcd')
-    os.remove(path+'/traj4.dcd')
-    t.xyz /= 10
-    t.unitcell_lengths /= 10
-    t[0].save_pdb(path+'/top.pdb')
-    t.save_dcd(path+'/traj.dcd')
+    np.save(f'{name:s}_conc.npy',hs,allow_pickle=False)
+    return hs, z

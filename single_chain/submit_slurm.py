@@ -17,7 +17,7 @@ conda activate calvados
 
 python ./simulate.py --seq_name {{seq_name}} --path {{path}}""")
 
-def initProteins():
+def init_proteins():
     proteins = pd.DataFrame(columns=['temp','pH','ionic','fasta','N'],dtype=object)
 
     # DOI: 10.1073/pnas.1322611111
@@ -26,7 +26,7 @@ def initProteins():
     proteins.loc['ACTR'] = dict(temp=278,pH=7.4,fasta=fasta_ACTR,ionic=0.2,N=len(fasta_ACTR))
     return proteins
 
-sequences = initProteins()
+sequences = init_proteins()
 sequences.to_csv('sequences.csv')
 
 parent_dir = './' # or e.g. 'replica_0'

@@ -3,12 +3,12 @@ import os
 import subprocess
 from jinja2 import Template
 
-proteins = initProteins()
-proteins.to_pickle('proteins.pkl')
+sequences = init_proteins()
+sequences.to_csv('sequences.csv')
 
 submission = Template("""#!/bin/bash
 #SBATCH --job-name={{name}}_{{temp}}
-#SBATCH --nodes=1           
+#SBATCH --nodes=1
 #SBATCH --partition=qgpu
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=18
@@ -21,12 +21,11 @@ conda activate calvados
 module purge
 module load cmake/3.9.4 gcc/6.5.0 openmpi/4.0.3 llvm/7.0.0 cuda/9.2.148
 
-python ./simulate.py --name {{name}} --temp {{temp}} --cutoff {{cutoff}}""")
+python ./simulate.py --name {{name}} --temp {{temp}}""")
 
 r = pd.read_csv('residues.csv').set_index('three')
 r.lambdas = r['CALVADOS2'] # select CALVADOS1 or CALVADOS2 stickiness parameters
 r.to_csv('residues.csv')
-cutoff = 2.0 # set the cutoff for the nonionic interactions
 
 for name,prot in proteins.loc[['A1']].iterrows():
     if not os.path.isdir(name):
@@ -35,5 +34,5 @@ for name,prot in proteins.loc[['A1']].iterrows():
         if not os.path.isdir(name+'/{:d}'.format(temp)):
             os.mkdir(name+'/{:d}'.format(temp))
         with open('{:s}_{:d}.sh'.format(name,temp), 'w') as submit:
-            submit.write(submission.render(name=name,temp='{:d}'.format(temp),cutoff='{:.1f}'.format(cutoff)))
+            submit.write(submission.render(name=name,temp='{:d}'.format(temp)))
         subprocess.run(['sbatch','{:s}_{:d}.sh'.format(name,temp)])

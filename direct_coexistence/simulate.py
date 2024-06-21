@@ -10,10 +10,9 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument('--name',nargs='?',const='', type=str)
 parser.add_argument('--temp',nargs='?',const='', type=int)
-parser.add_argument('--cutoff',nargs='?',const='', type=float)
 args = parser.parse_args()
 
-def simulate(residues,name,prot,temp,cutoff):
+def simulate(residues,name,prot,temp):
     residues = residues.set_index('one')
 
     lj_eps, fasta, types, MWs = genParamsLJ(residues,name,prot)
@@ -47,7 +46,7 @@ def simulate(residues,name,prot,temp,cutoff):
     c = unit.Quantity(np.zeros([3]), unit.nanometers)
     c[2] = Lz * unit.nanometers
     system.setDefaultPeriodicBoxVectors(a, b, c)
-    
+
     # initial config
     xy = np.empty(0)
     xy = np.append(xy,np.random.rand(2)*(L-margin)-(L-margin)/2).reshape((-1,2))
@@ -84,30 +83,25 @@ def simulate(residues,name,prot,temp,cutoff):
     for _ in range(n_chains):
         system.addParticle((residues.loc[prot.fasta[0]].MW+2)*unit.amu)
         for a in prot.fasta[1:-1]:
-            system.addParticle(residues.loc[a].MW*unit.amu) 
+            system.addParticle(residues.loc[a].MW*unit.amu)
         system.addParticle((residues.loc[prot.fasta[-1]].MW+16)*unit.amu)
 
     hb = openmm.openmm.HarmonicBondForce()
 
-    energy_expression = 'select(step(r-2^(1/6)*s),4*eps*l*((s/r)^12-(s/r)^6-shift),4*eps*((s/r)^12-(s/r)^6-l*shift)+eps*(1-l))'
-    ah = openmm.openmm.CustomNonbondedForce(energy_expression+'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/rc)^12-(0.5*(s1+s2)/rc)^6')
+    energy_expression = f'{lj_eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
+    ah = openmm.openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/2.0)^12-(0.5*(s1+s2)/2.0)^6')
 
-    ah.addGlobalParameter('eps',lj_eps*unit.kilojoules_per_mole)
-    ah.addGlobalParameter('rc',cutoff*unit.nanometer)
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
-    
-    print('rc',cutoff*unit.nanometer)
- 
-    yu = openmm.openmm.CustomNonbondedForce('q*(exp(-kappa*r)/r-shift); q=q1*q2')
-    yu.addGlobalParameter('kappa',yukawa_kappa/unit.nanometer)
-    yu.addGlobalParameter('shift',np.exp(-yukawa_kappa*4.0)/4.0/unit.nanometer)
+
+    shift = np.exp(-yukawa_kappa*4.0)/4.0
+    yu = openmm.openmm.CustomNonbondedForce(f'q*(exp(-{yukawa_kappa}*r)/r-{shift}); q=q1*q2')
     yu.addPerParticleParameter('q')
 
     for j in range(n_chains):
         begin = j*N
         end = j*N+N
-       
+
         for a,e in zip(prot.fasta,yukawa_eps):
             yu.addParticle([e*unit.nanometer*unit.kilojoules_per_mole])
             ah.addParticle([residues.loc[a].sigmas*unit.nanometer, residues.loc[a].lambdas*unit.dimensionless])
@@ -122,8 +116,8 @@ def simulate(residues,name,prot,temp,cutoff):
     yu.setNonbondedMethod(openmm.openmm.CustomNonbondedForce.CutoffPeriodic)
     ah.setNonbondedMethod(openmm.openmm.CustomNonbondedForce.CutoffPeriodic)
     hb.setUsesPeriodicBoundaryConditions(True)
-    yu.setCutoffDistance(4*unit.nanometer)
-    ah.setCutoffDistance(cutoff*unit.nanometer)
+    yu.setCutoffDistance(4.0*unit.nanometer)
+    ah.setCutoffDistance(2.0*unit.nanometer)
 
     system.addForce(hb)
     system.addForce(yu)
@@ -159,11 +153,11 @@ def simulate(residues,name,prot,temp,cutoff):
 
     simulation.saveCheckpoint(check_point)
 
-    genDCD(residues,name,prot,temp,n_chains)
+    center_slab(name)
 
 residues = pd.read_csv('residues.csv').set_index('three',drop=False)
-proteins = pd.read_pickle('proteins.pkl')
+sequences = pd.read_csv('sequences.csv',index_col=0)
 print(args.name,args.temp)
 t0 = time.time()
-simulate(residues,args.name,proteins.loc[args.name],args.temp,args.cutoff)
+simulate(residues,args.name,sequences.loc[args.name],args.temp)
 print('Timing {:.3f}'.format(time.time()-t0))
