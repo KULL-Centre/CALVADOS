@@ -13,7 +13,6 @@ parser.add_argument('--temp',nargs='?',const='', type=int)
 args = parser.parse_args()
 
 def simulate(residues,name,prot,temp):
-    residues = residues.set_index('one')
 
     lj_eps, fasta, types, MWs = genParamsLJ(residues,name,prot)
     yukawa_eps, yukawa_kappa = genParamsDH(residues,name,prot,temp)
@@ -155,7 +154,7 @@ def simulate(residues,name,prot,temp):
 
     center_slab(name)
 
-residues = pd.read_csv('residues.csv').set_index('three',drop=False)
+residues = pd.read_csv('residues.csv').set_index('one',drop=False)
 sequences = pd.read_csv('sequences.csv',index_col=0)
 print(args.name,args.temp)
 t0 = time.time()
