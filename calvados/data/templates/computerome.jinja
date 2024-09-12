@@ -1,0 +1,22 @@
+#!/bin/sh
+#PBS -W group_list=ku_10001 -A ku_10001
+#PBS -N {{sysname}}_{{temp}}
+### Only send mail when job is aborted or terminates abnormally
+#PBS -m n
+### Number of nodes
+{%- if platform == 'CUDA' %}
+#PBS -l nodes=1:ppn=20:gpus=1
+{%- else %}
+#PBS -l nodes=1:ppn={{threads}}:thinnode
+{%- endif %}
+### Memory
+#PBS -l mem=80gb
+#PBS -l walltime=24:00:00
+#PBS -o {{sysname}}_{{temp}}.out
+#PBS -e {{sysname}}_{{temp}}.err
+
+source {{fbash}}
+conda activate {{envname}}
+
+cd {{path}}
+python run.py --path {{path}} --config {{fconfig}} --components {{fcomponents}}

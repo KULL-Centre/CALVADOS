@@ -1,63 +1,56 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6914054.svg)](https://doi.org/10.5281/zenodo.6914054)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6914053.svg)](https://doi.org/10.5281/zenodo.6914053)
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KULL-Centre/_2023_Tesei_IDRome/blob/main/IDRLab.ipynb)
-[![Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/r-eFzoBiQZ4)
+[![CALVADOS Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/r-eFzoBiQZ4)
+[![IDRome Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/kL3-cusHgzM)
 
 # CALVADOS
-### Coarse-graining Approach to Liquid-liquid phase separation Via an Automated Data-driven Optimisation Scheme 
 
-This repository contains Python code to run coarse-grained molecular dynamics simulations of intrinsically disordered proteins (IDPs) using the CALVADOS model.
+Coarse-grained implicit-solvent simulations of biomolecules in the openMM framework.
+Earlier implementations of the code are available on [Zenodo](https://zenodo.org/search?q=metadata.subjects.subject%3A%22CALVADOS%22&l=list&p=1&s=10&sort=bestmatch) ([DOI: 10.5281/zenodo.13754000](https://doi.org/10.5281/zenodo.13754000)).
 
-### Layout
+Please cite the following references when using the software:
 
-- `single_chain/` Python code to run single-chain simulations of IDPs using the CALVADOS model. `python submit_local.py` runs a simulation of a single ACTR chain on a single CPU.
-- `direct_coexistence/` Python code to run multi-chain simulations of IDPs using the CALVADOS model in slab geometry. `python submit.py` submits a direct-coexistence simulation of 100 A1 LCD chains on a single GPU.
+- G. Tesei, T. K. Schulze, R. Crehuet, K. Lindorff-Larsen. Accurate model of liquid-liquid phase behavior of intrinsically disordered proteins from optimization of single-chain properties. PNAS (2021), 118(44):e2111696118.
+- G. Tesei, K. Lindorff-Larsen. Improved predictions of phase behaviour of intrinsically disordered proteins by tuning the interaction range. Open Research Europe (2022), 2(94).
+- F. Cao, S. von Bülow, G. Tesei, K. Lindorff-Larsen. A coarse-grained model for disordered and multi-domain proteins. bioRxiv (2024).
 
-In the examples, direct-coexistence and single-chain simulations are performed using [openMM](https://openmm.org/) and [HOOMD-blue](https://hoomd-blue.readthedocs.io/en/latest/) installed with [mphowardlab/azplugins](https://github.com/mphowardlab/azplugins), respectively.
+## Installation Instructions
 
-### Usage
-
-To run the code, install [Miniconda](https://conda.io/miniconda.html) and make sure all required packages are installed by issuing the following terminal commands
-
-```bash
-    conda env create -f environment.yml
-    source activate calvados
+1. Make new conda environment for calvados
+``` 
+conda create -n calvados python=3.10
+conda activate calvados
+```
+2. Install numba, mdtraj with conda and openmm (they have caused issues with pip install)
+```
+conda install numba
+conda install -c conda-forge mdtraj
+conda install -c conda-forge openmm cudatoolkit=11.2
+```
+3. Clone package and install CALVADOS and its dependencies using pip
+``` 
+git clone git@github.com:KULL-Centre/CALVADOS.git
+cd calvados
+pip install .
+(or pip install -e .)
+```
+4. Clean up faulty pip install of scipy:
+```
+conda install scipy
 ```
 
-#### Commands to install [HOOMD-blue](https://hoomd-blue.readthedocs.io/en/latest/) v2.9.3 with [mphowardlab/azplugins](https://github.com/mphowardlab/azplugins) v0.11.0
+## Contact
 
-```bash
-    curl -LO https://github.com/glotzerlab/hoomd-blue/releases/download/v2.9.3/hoomd-v2.9.3.tar.gz
-    tar xvfz hoomd-v2.9.3.tar.gz
-    git clone https://github.com/mphowardlab/azplugins.git
-    cd azplugins
-    git checkout tags/v0.11.0
-    cd ..
-    cd hoomd-v2.9.3
-    mkdir build
-    cd build
-    cmake ../ -DCMAKE_INSTALL_PREFIX=<path to python> \
-        -DENABLE_CUDA=ON -DENABLE_MPI=ON -DSINGLE_PRECISION=ON -DENABLE_TBB=OFF \
-        -DCMAKE_CXX_COMPILER=<path to g++> -DCMAKE_C_COMPILER=<path to gcc>
-    make -j4
-    cd ../hoomd
-    ln -s ../../azplugins/azplugins azplugins
-    cd ../build && make install -j4
-```
+Please check out the example folders and the example files `prepare_minimal.py` and `prepare.py`. 
+For further questions and inquiries, please contact us.
 
-Authors
--------------
+## Authors
+
+[Sören von Bülow (@sobuelow)](https://github.com/sobuelow)
 
 [Giulio Tesei (@gitesei)](https://github.com/gitesei)
 
-[Thea K. Schulze (@theaschulze)](https://github.com/theaschulze)
-
-[Ramon Crehuet (@rcrehuet)](https://github.com/rcrehuet)
+[Fan Cao (@fancaoErik)](https://github.com/fancaoErik)
 
 [Kresten Lindorff-Larsen (@lindorff-larsen)](https://github.com/lindorff-larsen)
 
-Articles
--------------
-
-G. Tesei, T. K. Schulze, R. Crehuet, and K. Lindorff-Larsen. _PNAS_ 118(44), 2021. DOI: [10.1073/pnas.2111696118](https://www.pnas.org/doi/10.1073/pnas.2111696118)
-
-G. Tesei and K. Lindorff-Larsen. _Open Research Europe_ 2023 2(94). DOI: [10.12688/openreseurope.14967.2](https://doi.org/10.12688/openreseurope.14967.2)

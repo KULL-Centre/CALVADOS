@@ -1,0 +1,6 @@
+---
+molecule_type : 'protein'
+nmol : 1
+restraint : False
+charge_termini : 'both'
+alpha: 0

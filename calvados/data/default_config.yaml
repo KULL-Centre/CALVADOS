@@ -1,0 +1,38 @@
+---
+sysname : 'default_simulation'
+topol : 'center'
+ffasta : 'fastabib.fasta'
+cutoff_lj : 2.0
+cutoff_yu : 4.0
+eps_lj : 0.2 # kcal/mol
+friction_coeff: 0.01 # ps-1
+kb : 8033.0 # kJ/mol/nm2
+fixed_lambda: 0
+
+steps : 100000000
+wfreq : 100000
+platform : 'CPU'
+threads : 1
+runtime : 0
+restart : 'checkpoint'
+frestart : 'restart.chk'
+verbose : false
+
+k_harmonic : 700.
+k_go : 10.
+cutoff_restr : 0.9
+pdb_folder : 'pdbs'
+restraint_type : 'harmonic'
+use_com : true
+colabfold : 0
+bfac_shift : 0.8
+bfac_width : 50.
+pae_shift : 0.4
+pae_width : 8.
+fdomains : 'domains.yaml'
+
+slab_eq : false
+bilayer_eq : false
+zero_lateral_tension : false
+k_eq : 0.02
+steps_eq : 1000
