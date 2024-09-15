@@ -29,7 +29,7 @@ def init_ah_interactions(eps,rc,fixed_lambda):
     # intermolecular interactions
     energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
     #ah = openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/{rc})^12-(0.5*(s1+s2)/{rc})^6')
-    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
+    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
 
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
@@ -180,7 +180,7 @@ def init_cosine_interactions(eps):
     """ Define cosine interaction (Cooke and Deserno lipid model, DOI: https://doi.org/10.1063/1.2135785). """
 
     cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
-    cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(delta(id1+id2)*l1*l2,1,0); rc=2^(1/6)*s; s=0.5*(s1+s2)')
+    cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
     cosine.addPerParticleParameter('s')
     cosine.addPerParticleParameter('l')
     cosine.addPerParticleParameter('id')

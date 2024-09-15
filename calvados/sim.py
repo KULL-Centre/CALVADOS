@@ -321,7 +321,7 @@ class Sim:
                     if comp.molecule_type == "cooke_lipid":
                         if j-i == 1:
                             d = 0.5 * (comp.bondlengths[i] + comp.bondlengths[j])
-                            kfene = 30*3*self.eps_lj/d/d
+                            kfene = 20*3*self.eps_lj/d/d
                             bidx = self.wcafene.addBond(i+offset, j+offset, [d*unit.nanometer, kfene*unit.kilojoules_per_mole/(unit.nanometer**2)])
                             self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,kfene]) # 1-based
 
@@ -331,7 +331,7 @@ class Sim:
                             self.cn.addExclusion(i+offset, j+offset)
                         else:
                             d = 0.5 * (comp.bondlengths[i] + comp.bondlengths[j])
-                            kbend = 30*self.eps_lj/d/d
+                            kbend = 20*self.eps_lj/d/d
                             bidx = self.hb.addBond(i+offset, j+offset, 4*d*unit.nanometer, kbend*unit.kilojoules_per_mole/(unit.nanometer**2))
                             self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,4*d,kbend]) # 1-based
 
@@ -401,9 +401,9 @@ class Sim:
                 self.ah.addParticle([sig*unit.nanometer, lam, 1])
             if self.ncookelipids > 0:
                 if comp.molecule_type == 'cooke_lipid':
-                    self.cos.addParticle([sig*unit.nanometer, lam, 0])
-                else:
                     self.cos.addParticle([sig*unit.nanometer, lam, 1])
+                else:
+                    self.cos.addParticle([sig*unit.nanometer, lam, 0])
 
         # Add Debye-Huckel
         for q in comp.qs:
@@ -568,6 +568,7 @@ class Sim:
             rep.report(simulation,state_final)
             pdb = app.pdbfile.PDBFile(f'{self.path}/equilibration_final.pdb')
             topology = pdb.getTopology()
+            a, b, c = state_final.getPeriodicBoxVectors()
             topology.setPeriodicBoxVectors(state_final.getPeriodicBoxVectors())
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
@@ -585,8 +586,9 @@ class Sim:
             else:
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform)
             simulation.context.setPositions(state_final.getPositions())
-            print(f'Minimizing energy.')
-            simulation.minimizeEnergy()
+            simulation.context.setPeriodicBoxVectors(a, b, c)
+            #print(f'Minimizing energy.')
+            #simulation.minimizeEnergy()
 
         # run simulation
         simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/{self.sysname:s}.dcd',self.wfreq,append=append))
@@ -607,7 +609,7 @@ class Sim:
         now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
-        state_final = simulation.context.getState(getPositions=True)
+        state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
         rep = app.pdbreporter.PDBReporter(f'{self.path}/{self.sysname}_{dt_string}.pdb',0)
         rep.report(simulation,state_final)
         rep = app.pdbreporter.PDBReporter(f'{self.path}/checkpoint.pdb',0)
