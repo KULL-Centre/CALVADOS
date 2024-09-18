@@ -12,13 +12,13 @@ setup(
     name='calvados',
     version='0.4.0',
     description='Coarse-grained implicit-solvent simulations of biomolecules',
-    url='https://github.com/sobuelow/calvados',
-    authors = [
-        {name='Sören von Bülow', email='soren.bulow@bio.ku.dk'},
-        {name='Giulio Tesei', email='giulio.tesei@bio.ku.dk'},
-        {name='Fan Cao', email='fan.cao@bio.ku.dk'},
-        {name='Kresten Lindorff-Larsen', email='lindorff@bio.ku.dk'}
-    ]
+    url='https://github.com/KULL-Centre/CALVADOS',
+    authors=[
+        {'name':'Soren von Bulow', 'email':'soren.bulow@bio.ku.dk'},
+        {'name':'Giulio Tesei', 'email':'giulio.tesei@bio.ku.dk'},
+        {'name':'Fan Cao', 'email':'fan.cao@bio.ku.dk'},
+        {'name':'Kresten Lindorff-Larsen', 'email':'lindorff@bio.ku.dk'}
+    ],
     license='GNU GPL3',
     packages=['calvados'],
     install_requires=[

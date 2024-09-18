@@ -12,6 +12,7 @@ fixed_lambda: 0
 steps : 100000000
 wfreq : 100000
 platform : 'CPU'
+gpu_id: 0
 threads : 1
 runtime : 0
 restart : 'checkpoint'

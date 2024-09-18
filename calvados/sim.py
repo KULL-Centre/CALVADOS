@@ -500,8 +500,12 @@ class Sim:
         # assemble simulation
         platform = openmm.Platform.getPlatformByName(self.platform)
         if self.platform == 'CPU':
+            print('Running on', platform.getName())
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
         else:
+            if os.environ.get('CUDA_VISIBLE_DEVICES') == None:
+                platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
+            print('Running on', platform.getName())
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
 
         fcheck_in = f'{self.path}/{self.frestart}'
