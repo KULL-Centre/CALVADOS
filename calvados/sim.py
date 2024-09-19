@@ -158,12 +158,12 @@ class Sim:
         # self.make_sys_dataframe() # pool component information into one df
         # print(self.df_sys, flush=True)
         if self.topol == 'slab':
-            self.xyzgrid = build.build_xyzgrid(self.nproteins,[self.box[0],self.box[1],2*self.box[0]])
-            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.box[0]])
+            self.xyzgrid = build.build_xyzgrid(self.nproteins,[self.box[0],self.box[1],2*self.slab_width])
+            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width])
             if self.ncrowders > 0:
-                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-2*self.box[0]])
+                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-self.slab_outer])
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
-                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+2*self.box[0]]), axis=0)
+                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.slab_outer]), axis=0)
         elif self.topol == 'grid':
             self.xyzgrid = build.build_xyzgrid(self.nmolecules,self.box)
         if self.ncookelipids > 0:

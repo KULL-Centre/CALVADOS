@@ -7,7 +7,9 @@ cutoff_yu : 4.0
 eps_lj : 0.2 # kcal/mol
 friction_coeff: 0.01 # ps-1
 kb : 8033.0 # kJ/mol/nm2
-fixed_lambda: 0
+fixed_lambda : 0
+slab_width : 20
+slab_outer : 30 
 
 steps : 100000000
 wfreq : 100000
