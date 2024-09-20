@@ -5,8 +5,12 @@ import subprocess
 # download BLOCKING code from GitHub repo
 if not os.path.isdir('calvados/BLOCKING'):
     os.mkdir('calvados/BLOCKING')
-subprocess.run(['curl','-o','calvados/BLOCKING/main.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/main.py'])
-subprocess.run(['curl','-o','calvados/BLOCKING/block_tools.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/block_tools.py'])
+try:
+    subprocess.run(['wget','-o','calvados/BLOCKING/main.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/main.py'])
+    subprocess.run(['wget','-o','calvados/BLOCKING/block_tools.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/block_tools.py'])
+except FileNotFoundError:
+    subprocess.run(['curl','-o','calvados/BLOCKING/main.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/main.py'])
+    subprocess.run(['curl','-o','calvados/BLOCKING/block_tools.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/block_tools.py'])
 
 setup(
     name='calvados',
