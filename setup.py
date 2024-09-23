@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 import os
 import subprocess
 
@@ -24,7 +24,7 @@ setup(
         {'name':'Kresten Lindorff-Larsen', 'email':'lindorff@bio.ku.dk'}
     ],
     license='GNU GPL3',
-    packages=['calvados'],
+    packages=find_packages(),
     install_requires=[
         'numpy',
         'pandas',
