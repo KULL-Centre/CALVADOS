@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 import os
 import subprocess
 
@@ -24,22 +24,19 @@ setup(
         {'name':'Kresten Lindorff-Larsen', 'email':'lindorff@bio.ku.dk'}
     ],
     license='GNU GPL3',
-    packages=['calvados'],
+    packages=find_packages(),
     install_requires=[
-        'numpy',
-        'pandas',
+        'numpy==1.24',
+        'pandas==2.1.1',
         'OpenMM',
-        'mdtraj',
-        'MDAnalysis',
-        'scipy',
-        'biopython',
-        'Jinja2',
-        'progressbar2',
-        'matplotlib',
-        'numba',
-        'PyYAML',
-        'statsmodels',
-        'localcider'
+        'MDAnalysis==2.6.1',
+        'biopython==1.81',
+        'Jinja2==3.1.2',
+        'tqdm==4.66',
+        'matplotlib==3.8',
+        'PyYAML==6.0',
+        'statsmodels==0.14',
+        'localcider==0.1.21'
     ],
 
     # include_package_data=True,
