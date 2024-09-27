@@ -29,8 +29,8 @@ conda install -c conda-forge openmm cudatoolkit=11.2
 ```
 3. Clone package and install CALVADOS and its dependencies using pip
 ``` 
-git clone git@github.com:KULL-Centre/CALVADOS.git
-cd calvados
+git clone https://github.com/KULL-Centre/CALVADOS.git
+cd CALVADOS
 pip install .
 (or pip install -e .)
 ```
