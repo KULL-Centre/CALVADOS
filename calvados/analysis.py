@@ -468,7 +468,7 @@ def center_slab(name,path,ref_atoms='all',start=None,end=None,step=1,input_pdb='
             W.write(ag)
     return hs, z/10.
 
-def calc_slab_profiles(path,ref_atoms,sel_atoms_list,output_prefix,nskip):
+def calc_slab_profiles(path,ref_atoms,sel_atoms_list,output_prefix,start=None,end=None,step=1,input_pdb='top.pdb'):
     """
     path: path where trajectory and pdb are saved
     ref_atoms: reference atoms to shift to the middle of the box
@@ -476,24 +476,29 @@ def calc_slab_profiles(path,ref_atoms,sel_atoms_list,output_prefix,nskip):
     output_prefix: prefix for output files
     nskip: number of frames to skip to reach equilibrium
     """
-    # center trajectory based on tail beads
-    h_ref, z = center_slab(path,path=path,ref_atoms=ref_atoms)
+    # center trajectory based on reference beads
+    h_ref, z = center_slab(path,path,ref_atoms,start,end,step,input_pdb)
     # load centered trajectory
-    traj = md.load_dcd(path+'/traj.dcd',top=path+'/top.pdb')[nskip:]
-    h_ref = h_ref[nskip:]
-    # area of the xy plane
-    area = traj.unitcell_lengths[:,0]*traj.unitcell_lengths[:,1]
+    u = MDAnalysis.Universe(f'{path:s}/'+input_pdb,f'{path:s}/traj.dcd',in_memory=True)
+    n_frames = len(u.trajectory[start:end:step])
+    h_ref = h_ref[start:end:step]
+    # area of the xy plane in nm2
+    area = u.dimensions[0]*u.dimensions[1]/100.
     # density profile for ref_atoms
     binwidth = 1
     edges = np.arange(0,z.size+binwidth,binwidth)
     np.save(output_prefix+'_ref_profile.npy',np.c_[h_ref/area.mean()])
     h_ref_mean = h_ref.mean(axis=0)/area.mean()*10 # number of beads per nm3
-
+    n_bins = edges.size - 1
     all_profiles = np.c_[z,h_ref_mean]
     # density profile: selected atoms
     for i,sel_atoms in enumerate(sel_atoms_list):
-        t_sel = traj.atom_slice(traj.top.select(sel_atoms))
-        h_sel = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_sel.xyz[:,:,2])
+        ag_sel = u.select_atoms(sel_atoms)
+        h_sel = np.zeros((n_frames,n_bins))
+        for t,ts in enumerate(u.trajectory[start:end:step]):
+            zpos = ag_sel.positions.T[2]
+            h, e = np.histogram(zpos,bins=edges)
+            h_sel[t] = h
         np.save(output_prefix+f'_sel_profile_{i:d}.npy',np.c_[h_sel/area.mean()])
         h_sel_mean = h_sel.mean(axis=0)/area.mean()*10 # number of beads per nm3
         all_profiles = np.c_[all_profiles,h_sel_mean]
