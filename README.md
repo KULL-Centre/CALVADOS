@@ -5,7 +5,7 @@
 
 # CALVADOS
 
-Coarse-grained implicit-solvent simulations of biomolecules in the openMM framework.
+Coarse-grained implicit-solvent simulations of biomolecules in the OpenMM framework.
 Earlier implementations of the code are available on [Zenodo](https://zenodo.org/search?q=metadata.subjects.subject%3A%22CALVADOS%22&l=list&p=1&s=10&sort=bestmatch) ([DOI: 10.5281/zenodo.13754000](https://doi.org/10.5281/zenodo.13754000)).
 
 Please cite the following references when using the software:

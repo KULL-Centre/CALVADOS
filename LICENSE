@@ -672,3 +672,31 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
+
+ADDITIONAL LICENSE INFORMATION
+
+This project is licensed under the GNU General Public License version 3.0 (GPL-3.0).
+
+However, "calvados/statedatareporter.py" is a modified versions of code originally from the OpenMM molecular simulation toolkit, with further modifications by Zheng Gong. The modified version is licensed under the MIT License as detailed below. The remainder of the project is licensed under the GPL-3.0, and any combination of this project with files under MIT will follow the terms of the GPL-3.0.
+
+MIT LICENSE for calvados/statedatareporter.py
+
+This file is a modified version of OpenMM code from the OpenMM molecular simulation toolkit. It was originally modified by Zheng Gong in the mstk repository (https://github.com/z-gong/mstk).
+
+The OpenMM molecular simulation toolkit originates from
+Simbios, the NIH National Center for Physics-Based Simulation of
+Biological Structures at Stanford, funded under the NIH Roadmap for
+Medical Research, grant U54 GM072970. See https://simtk.org.
+
+Portions copyright (c) 2012-2021 Stanford University, the Authors, and Contributors.
+Original Authors: Peter Eastman
+Original Contributors: Robert McGibbon
+
+Further modifications by Zheng Gong and Giulio Tesei.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS, CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
