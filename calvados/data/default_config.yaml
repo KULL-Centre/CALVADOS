@@ -20,6 +20,8 @@ runtime : 0
 restart : 'checkpoint'
 frestart : 'restart.chk'
 verbose : false
+pressure : false
+pressurefreq : 1
 
 k_harmonic : 700.
 k_go : 10.

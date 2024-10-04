@@ -51,6 +51,7 @@ import openmm as mm
 import openmm.unit as unit
 import math
 import time
+import numpy as np
 
 class StateDataReporter(object):
     """StateDataReporter outputs information about a simulation, such as energy and temperature, to a file.
@@ -185,11 +186,14 @@ class StateDataReporter(object):
 
         Returns
         -------
-        dict
-            A dictionary describing the required information for the next report
+        tuple
+            A five element tuple. The first element is the number of steps
+            until the next report. The remaining elements specify whether
+            that report will require positions, velocities, forces, and
+            energies respectively.
         """
         steps = self._reportInterval - simulation.currentStep%self._reportInterval
-        return {'steps':steps, 'periodic':None, 'include':self._includes}
+        return (steps, self._needsPositions, self._needsVelocities, self._needsForces, self._needEnergy)
 
     def report(self, simulation, state):
         """Generate a report.
@@ -406,36 +410,38 @@ class StateDataReporter(object):
         state : mm.State
         '''
         box = state.getPeriodicBoxVectors(asNumpy=True)
+        box_scaled = box._value.copy()
         positions = state.getPositions(asNumpy=True)
         volume = box[0][0] * box[1][1] * box[2][2]
-        scale_array = np.ones((3,3), dtype=np.float32)
+        scale_array = np.eye(3)
 
-        p_kinetic = (2 * state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole) / 3 / volume).value_in_unit(unit.bar)
+        p_kinetic = (2 * state.getKineticEnergy() * unit.item / 3 / volume).value_in_unit(unit.bar)
 
-        scale = 0.0001
+        scale = 1e-4
         pressure_tensor = []
-        for i,j in itertools.combinations_with_replacement(range(3),2)
+        for i,j in [(0, 0), (1, 0), (2, 0), (1, 1), (2, 1), (2, 2)]:
             if not self._pressure[i,j]:
                 continue
             scale_array[i,j] += scale
-            box_scaled = box._value + scale_array - 1
+            box_scaled[i,j] += scale
 
             context.setPeriodicBoxVectors(*box_scaled)
             context.setPositions(np.dot(positions, scale_array))
-            context.applyConstraints(1e-6)
+            #context.applyConstraints(1e-6)
             U_plus = context.getState(getEnergy=True).getPotentialEnergy()
 
             scale_array[i,j] -= 2*scale
-            box_scaled = box._value + scale_array - 1
+            box_scaled[i,j] -= 2*scale
 
             context.setPeriodicBoxVectors(*box_scaled)
             context.setPositions(np.dot(positions, scale_array))
-            context.applyConstraints(1e-6)
+            #context.applyConstraints(1e-6)
             U_minus = context.getState(getEnergy=True).getPotentialEnergy()
 
             scale_array[i,j] += scale
+            box_scaled[i,j] += scale
 
-            dU = (U_plus - U_minus).value_in_unit(unit.kilojoules_per_mole)
+            dU = (U_plus - U_minus) * unit.item
             dV = 2 * scale * volume
             p_virial = -(dU / dV).value_in_unit(unit.bar)
 
