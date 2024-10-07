@@ -597,11 +597,9 @@ class Sim:
 
         # run simulation
         simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/{self.sysname:s}.dcd',self.wfreq,append=append))
-        if self.pressure:
-            simulation.reporters.append(StateDataReporter(f'{self.path}/{self.sysname}.csv',int(self.pressurefreq),pressure=True,separator='\t',append=append))
-        else:
-            simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',int(self.wfreq*10),
-                step=True,speed=True,elapsedTime=True,separator='\t',append=append))
+        if self.pressure_tensor:
+            simulation.reporters.append(StateDataReporter(f'{self.path}/{self.sysname}.npy',int(self.pressurefreq),pressure_tensor=self.pressure_tensor,append=append,volume=np.prod(self.box)))
+        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',int(self.wfreq*10),step=True,speed=True,elapsedTime=True,separator='\t',append=append))
 
         print("STARTING SIMULATION", flush=True)
         if self.runtime > 0: # in hours

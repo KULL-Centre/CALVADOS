@@ -14,13 +14,13 @@ slab_outer : 30
 steps : 100000000
 wfreq : 100000
 platform : 'CPU'
-gpu_id: 0
+gpu_id : 0
 threads : 1
 runtime : 0
 restart : 'checkpoint'
 frestart : 'restart.chk'
 verbose : false
-pressure : false
+pressure_tensor : false
 pressurefreq : 1
 
 k_harmonic : 700.
