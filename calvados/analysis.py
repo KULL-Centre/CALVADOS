@@ -425,7 +425,7 @@ def calc_zpatch(z,h):
     hpatch = np.array(hpatch)
     return zpatch, hpatch
 
-def center_slab(name,path,ref_atoms='all',start=None,end=None,step=1,input_pdb='top.pdb'):
+def center_slab(path,name,ref_atoms='all',start=None,end=None,step=1,input_pdb='top.pdb'):
     u = MDAnalysis.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
     n_frames = len(u.trajectory[start:end:step])
     ag_ref = u.select_atoms(ref_atoms)
@@ -468,16 +468,16 @@ def center_slab(name,path,ref_atoms='all',start=None,end=None,step=1,input_pdb='
             W.write(ag)
     return hs, z/10.
 
-def calc_slab_profiles(path,ref_atoms,sel_atoms_list,output_prefix,start=None,end=None,step=1,input_pdb='top.pdb'):
+def calc_slab_profiles(path,name,ref_atoms,sel_atoms_list,output_folder,start=None,end=None,step=1,input_pdb='top.pdb'):
     """
     path: path where trajectory and pdb are saved
     ref_atoms: reference atoms to shift to the middle of the box
     sel_atoms_list: list of extra atoms for which we calculate the density profile
-    output_prefix: prefix for output files
+    output_folder: folder where output files are saved
     nskip: number of frames to skip to reach equilibrium
     """
     # center trajectory based on reference beads
-    h_ref, z = center_slab(path,path,ref_atoms,start,end,step,input_pdb)
+    h_ref, z = center_slab(path,name,ref_atoms,start,end,step,input_pdb)
     # load centered trajectory
     u = MDAnalysis.Universe(f'{path:s}/'+input_pdb,f'{path:s}/traj.dcd',in_memory=True)
     n_frames = len(u.trajectory[start:end:step])
@@ -487,7 +487,7 @@ def calc_slab_profiles(path,ref_atoms,sel_atoms_list,output_prefix,start=None,en
     # density profile for ref_atoms
     binwidth = 1
     edges = np.arange(0,z.size+binwidth,binwidth)
-    np.save(output_prefix+'_ref_profile.npy',np.c_[h_ref/area.mean()])
+    np.save(output_folder+f'/{name:s}_ref_profile.npy',np.c_[h_ref/area.mean()])
     h_ref_mean = h_ref.mean(axis=0)/area.mean()*10 # number of beads per nm3
     n_bins = edges.size - 1
     all_profiles = np.c_[z,h_ref_mean]
@@ -499,8 +499,8 @@ def calc_slab_profiles(path,ref_atoms,sel_atoms_list,output_prefix,start=None,en
             zpos = ag_sel.positions.T[2]
             h, e = np.histogram(zpos,bins=edges)
             h_sel[t] = h
-        np.save(output_prefix+f'_sel_profile_{i:d}.npy',np.c_[h_sel/area.mean()])
+        np.save(output_folder+f'/{name:s}_sel_profile_{i:d}.npy',np.c_[h_sel/area.mean()])
         h_sel_mean = h_sel.mean(axis=0)/area.mean()*10 # number of beads per nm3
         all_profiles = np.c_[all_profiles,h_sel_mean]
 
-    np.save(output_prefix+'_profiles.npy',all_profiles)
+    np.save(output_folder+f'/{name:s}_profiles.npy',all_profiles)

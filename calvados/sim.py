@@ -513,6 +513,10 @@ class Sim:
         append = False
 
         if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
+            self.slab_eq = False
+            self.bilayer_eq = False
+
+        if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
             if not os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'):
                 raise Exception(f'Did not find {self.path}/{self.sysname:s}.dcd trajectory to append to!')
             append = True
@@ -540,7 +544,7 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.slab_eq and not os.path.isfile(fcheck_in):
+        if self.slab_eq:
             print(f"Starting equilibration with k_eq == {self.k_eq:.4f} kJ/(mol*nm) for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
@@ -563,7 +567,7 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.bilayer_eq and not os.path.isfile(fcheck_in):
+        if self.bilayer_eq:
             print(f"Starting equilibration under zero lateral tension for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
