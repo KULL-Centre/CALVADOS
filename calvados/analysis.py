@@ -482,13 +482,13 @@ def calc_slab_profiles(path,name,ref_atoms,sel_atoms_list,output_folder,start=No
     u = MDAnalysis.Universe(f'{path:s}/'+input_pdb,f'{path:s}/traj.dcd',in_memory=True)
     n_frames = len(u.trajectory[start:end:step])
     h_ref = h_ref[start:end:step]
-    # area of the xy plane in nm2
-    area = u.dimensions[0]*u.dimensions[1]/100.
+    binwidth = 1 # 0.1 nm
+    # volume of a slice in nm3
+    volume = u.dimensions[0]*u.dimensions[1]*binwidth/1e3
     # density profile for ref_atoms
-    binwidth = 1
     edges = np.arange(0,z.size+binwidth,binwidth)
-    np.save(output_folder+f'/{name:s}_ref_profile.npy',np.c_[h_ref/area.mean()])
-    h_ref_mean = h_ref.mean(axis=0)/area.mean()*10 # number of beads per nm3
+    np.save(output_folder+f'/{name:s}_ref_profile.npy',np.c_[h_ref/volume.mean()])
+    h_ref_mean = h_ref.mean(axis=0)/volume.mean() # number of beads per nm3
     n_bins = edges.size - 1
     all_profiles = np.c_[z,h_ref_mean]
     # density profile: selected atoms
@@ -499,8 +499,8 @@ def calc_slab_profiles(path,name,ref_atoms,sel_atoms_list,output_folder,start=No
             zpos = ag_sel.positions.T[2]
             h, e = np.histogram(zpos,bins=edges)
             h_sel[t] = h
-        np.save(output_folder+f'/{name:s}_sel_profile_{i:d}.npy',np.c_[h_sel/area.mean()])
-        h_sel_mean = h_sel.mean(axis=0)/area.mean()*10 # number of beads per nm3
+        np.save(output_folder+f'/{name:s}_sel_profile_{i:d}.npy',np.c_[h_sel/volume.mean()])
+        h_sel_mean = h_sel.mean(axis=0)/volume.mean() # number of beads per nm3
         all_profiles = np.c_[all_profiles,h_sel_mean]
 
     np.save(output_folder+f'/{name:s}_profiles.npy',all_profiles)
