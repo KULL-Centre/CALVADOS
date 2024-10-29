@@ -468,7 +468,7 @@ def center_slab(path,name,ref_atoms='all',start=None,end=None,step=1,input_pdb='
             W.write(ag)
     return hs, z/10.
 
-def calc_slab_profiles(path,name,ref_atoms,sel_atoms_list,output_folder,start=None,end=None,step=1,input_pdb='top.pdb'):
+def calc_slab_profiles(path,name,output_folder,ref_atoms,sel_atoms_list=[],start=None,end=None,step=1,input_pdb='top.pdb'):
     """
     path: path where trajectory and pdb are saved
     ref_atoms: reference atoms to shift to the middle of the box
@@ -487,9 +487,9 @@ def calc_slab_profiles(path,name,ref_atoms,sel_atoms_list,output_folder,start=No
     volume = u.dimensions[0]*u.dimensions[1]*binwidth/1e3
     # density profile for ref_atoms
     edges = np.arange(0,z.size+binwidth,binwidth)
+    n_bins = edges.size - 1
     np.save(output_folder+f'/{name:s}_ref_profile.npy',np.c_[h_ref/volume.mean()])
     h_ref_mean = h_ref.mean(axis=0)/volume.mean() # number of beads per nm3
-    n_bins = edges.size - 1
     all_profiles = np.c_[z,h_ref_mean]
     # density profile: selected atoms
     for i,sel_atoms in enumerate(sel_atoms_list):

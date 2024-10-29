@@ -50,7 +50,7 @@ analyses = f"""
 
 from calvados.analysis import calc_slab_profiles
 
-calc_slab_profiles("{path:s}","{sysname:s}","all",["all"],"data",0)
+calc_slab_profiles("{path:s}","{sysname:s}","data","all",0)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)

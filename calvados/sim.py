@@ -41,6 +41,10 @@ class Sim:
         self.box = np.array(self.box)
         self.eps_lj *= 4.184 # kcal to kJ/mol
 
+        if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
+            self.slab_eq = False
+            self.bilayer_eq = False
+
         if self.slab_eq:
             self.rcent = interactions.init_eq_restraints(self.box,self.k_eq)
 
@@ -488,13 +492,17 @@ class Sim:
     def simulate(self):
         """ Simulate. """
 
-        if self.restart == 'pdb':
-            pdb = app.pdbfile.PDBFile(self.frestart)
+        fcheck_in = f'{self.path}/{self.frestart}'
+        fcheck_out = f'{self.path}/restart.chk'
+        append = False
+
+        if self.restart == 'pdb' and os.path.isfile(fcheck_in):
+            pdb = app.pdbfile.PDBFile(fcheck_in)
         else:
             pdb = app.pdbfile.PDBFile(self.pdb_cg)
 
         # use langevin integrator
-        integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+        integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
         print(integrator.getFriction(),integrator.getTemperature())
 
         # assemble simulation
@@ -507,14 +515,6 @@ class Sim:
                 platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
             print('Running on', platform.getName())
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
-
-        fcheck_in = f'{self.path}/{self.frestart}'
-        fcheck_out = f'{self.path}/restart.chk'
-        append = False
-
-        if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
-            self.slab_eq = False
-            self.bilayer_eq = False
 
         if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
             if not os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'):
