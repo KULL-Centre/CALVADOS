@@ -15,6 +15,7 @@ Description of ...
    :maxdepth: 1
    :caption: Contents:
 
+   ./doc_pages/tutorial
    ./doc_pages/sim
    ./doc_pages/components
    ./doc_pages/cfg
