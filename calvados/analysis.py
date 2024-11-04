@@ -496,6 +496,7 @@ def calc_slab_profiles(path,name,output_folder,ref_atoms,sel_atoms_list=[],start
         ag_sel = u.select_atoms(sel_atoms)
         h_sel = np.zeros((n_frames,n_bins))
         for t,ts in enumerate(u.trajectory[start:end:step]):
+            ts = transformations.wrap(ag_sel)(ts)
             zpos = ag_sel.positions.T[2]
             h, e = np.histogram(zpos,bins=edges)
             h_sel[t] = h

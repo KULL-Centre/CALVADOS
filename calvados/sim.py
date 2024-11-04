@@ -503,6 +503,8 @@ class Sim:
 
         # use langevin integrator
         integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+        if self.random_number_seed != None:
+            integrator.setRandomNumberSeed(self.random_number_seed)
         print(integrator.getFriction(),integrator.getTemperature())
 
         # assemble simulation
@@ -600,8 +602,8 @@ class Sim:
 
         # run simulation
         simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/{self.sysname:s}.dcd',self.wfreq,append=append))
-        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',int(self.wfreq*10),
-                step=True,speed=True,elapsedTime=True,separator='\t',append=append))
+        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',self.logfreq,
+                step=True,speed=True,elapsedTime=True,potentialEnergy=self.report_potential_energy,separator='\t',append=append))
 
         print("STARTING SIMULATION", flush=True)
         if self.runtime > 0: # in hours

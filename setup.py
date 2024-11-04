@@ -34,7 +34,8 @@ setup(
         'matplotlib==3.8',
         'PyYAML==6.0',
         'statsmodels==0.14',
-        'localcider==0.1.21'
+        'localcider==0.1.21',
+        'pytest==8.3.3'
     ],
 
     # include_package_data=True,

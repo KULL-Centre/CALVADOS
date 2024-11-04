@@ -8,10 +8,10 @@ def genParamsDH(temp,ionic):
     # Calculate the prefactor for the Yukawa potential
     fepsw = lambda T : 5321/T+233.76-0.9297*T+0.1417*1e-2*T*T-0.8292*1e-6*T**3
     epsw = fepsw(temp)
-    lB = 1.6021766**2/(4*np.pi*8.854188*epsw)*6.022*1000/kT
+    lB = 1.6021766**2/(4*np.pi*8.854188*epsw)*6.02214076*1000/kT
     eps_yu = lB*kT
     # Calculate the inverse of the Debye length
-    k_yu = np.sqrt(8*np.pi*lB*ionic*6.022/10)
+    k_yu = np.sqrt(8*np.pi*lB*ionic*6.02214076/10)
     return eps_yu, k_yu
 
 def init_bonded_interactions():
