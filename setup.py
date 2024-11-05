@@ -1,5 +1,4 @@
 from setuptools import setup, find_packages
-import os
 import subprocess
 
 # download BLOCKING code from GitHub repo
@@ -26,7 +25,7 @@ setup(
     install_requires=[
         'numpy==1.24',
         'pandas==2.1.1',
-        'OpenMM',
+        'OpenMM==8.1.2',
         'MDAnalysis==2.6.1',
         'biopython==1.81',
         'Jinja2==3.1.2',
@@ -35,7 +34,10 @@ setup(
         'PyYAML==6.0',
         'statsmodels==0.14',
         'localcider==0.1.21',
-        'pytest==8.3.3'
+        'pytest==8.3.3',
+        'numba==0.60',
+        'scipy==1.13',
+        'mdtraj==1.10',
     ],
 
     # include_package_data=True,

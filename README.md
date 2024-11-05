@@ -21,11 +21,13 @@ Please cite the following references when using the software:
 conda create -n calvados python=3.10
 conda activate calvados
 ```
-2. Install numba, mdtraj with conda and openmm (they have caused issues with pip install)
+2. Install scipy, numba and openmm with conda
 ```
-conda install numba
-conda install -c conda-forge mdtraj
-conda install -c conda-forge openmm cudatoolkit=11.2
+conda install -c conda-forge scipy=1.13 numba=0.60 openmm
+```
+(2.b Install cudatoolkit when running on GPUs)
+```
+conda install -c conda-forge cudatoolkit=11.2
 ```
 3. Clone package and install CALVADOS and its dependencies using pip
 ``` 
@@ -33,10 +35,6 @@ git clone https://github.com/KULL-Centre/CALVADOS.git
 cd CALVADOS
 pip install .
 (or pip install -e .)
-```
-4. Clean up faulty pip install of scipy:
-```
-conda install scipy
 ```
 
 ## Testing

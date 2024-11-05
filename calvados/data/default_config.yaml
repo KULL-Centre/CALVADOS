@@ -10,7 +10,7 @@ kb : 8033.0 # kJ/mol/nm2
 fixed_lambda : 0
 slab_width : 30
 slab_outer : 40
-random_number_seed : None
+random_number_seed : null
 report_potential_energy : False
 
 steps : 100000000
