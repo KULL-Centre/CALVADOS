@@ -72,7 +72,7 @@ def test_ah_dh_potentials(resname1,resname2):
     steps = N_frames*N_save, # number of simulation steps
     platform = 'CPU', # or CUDA
     restart = None,
-    verbose = True,
+    verbose = False,
     report_potential_energy = True,
     random_number_seed = 12345,
 
@@ -125,5 +125,5 @@ def test_ah_dh_potentials(resname1,resname2):
 
     u_dh = DHSP(dist,yukawa_eps,lD,4)
     u_calc = u_ah + u_dh
-    assert np.mean((u-u_calc)**2) < 1e-6
+    assert np.allclose(u_calc,u,rtol=0,atol=2.5e-5)
 
