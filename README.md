@@ -5,7 +5,7 @@
 
 # CALVADOS
 
-Coarse-grained implicit-solvent simulations of biomolecules in the openMM framework.
+Coarse-grained implicit-solvent simulations of biomolecules in the OpenMM framework.
 Earlier implementations of the code are available on [Zenodo](https://zenodo.org/search?q=metadata.subjects.subject%3A%22CALVADOS%22&l=list&p=1&s=10&sort=bestmatch) ([DOI: 10.5281/zenodo.13754000](https://doi.org/10.5281/zenodo.13754000)).
 
 Please cite the following references when using the software:
@@ -21,11 +21,13 @@ Please cite the following references when using the software:
 conda create -n calvados python=3.10
 conda activate calvados
 ```
-2. Install numba, mdtraj with conda and openmm (they have caused issues with pip install)
+2. Install scipy, numba and openmm with conda
 ```
-conda install numba
-conda install -c conda-forge mdtraj
-conda install -c conda-forge openmm cudatoolkit=11.2
+conda install -c conda-forge scipy=1.13 numba=0.60 openmm=8.1.2
+```
+(2.b Install cudatoolkit when running on GPUs)
+```
+conda install -c conda-forge cudatoolkit=11.2
 ```
 3. Clone package and install CALVADOS and its dependencies using pip
 ``` 
@@ -34,10 +36,14 @@ cd CALVADOS
 pip install .
 (or pip install -e .)
 ```
-4. Clean up faulty pip install of scipy:
+
+## Testing
+
+```bash
+
+  python -m pytest
 ```
-conda install scipy
-```
+The test `test_ah_dh_interactions` simulates two free amino acids, calculates the potential energies based on the saved trajectory and compares these values with those in the OpenMM log file.
 
 ## Contact
 
