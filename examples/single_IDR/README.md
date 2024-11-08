@@ -5,4 +5,4 @@ python prepare.py --name <protein name>
 python <protein name>/run.py --path <protein name>
 ```
 
-where `<protein name>` (hnRNPA1LCD) is a protein with sequence provided in the fasta file in the `input` folder.
+where `<protein name>` is a protein defined in input/idr.fasta.

@@ -1,20 +1,19 @@
 import numpy as np
 import openmm
 from openmm import app, unit
-from pandas import read_csv
+
 from datetime import datetime
 
 import mdtraj as md
 
 from tqdm import tqdm
-from importlib import resources
 import os
 
 from calvados import build, interactions
 
 from yaml import safe_load
 
-from .components import Component, Protein, Lipid, Crowder
+from .components import *
 from .build import check_ssdomain
 
 class Sim:
@@ -34,16 +33,8 @@ class Sim:
         self.comp_dict = components['system']
         self.comp_defaults = components['defaults']
 
-        self.pkg_base = resources.files('calvados')
-        f = config.get('fresidues', f'{self.pkg_base}/data/residues.csv')
-        self.residues = read_csv(f).set_index('one')
-
         self.box = np.array(self.box)
         self.eps_lj *= 4.184 # kcal to kJ/mol
-
-        if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
-            self.slab_eq = False
-            self.bilayer_eq = False
 
         if self.slab_eq:
             self.rcent = interactions.init_eq_restraints(self.box,self.k_eq)
@@ -51,37 +42,37 @@ class Sim:
     def make_components(self):
         self.components = np.empty(0)
         self.use_restraints = False
-        spiral = True
+        spiral = False if self.topol=='shift_ref_bead' else True
         for name, properties in self.comp_dict.items():
-            if properties.get('molecule_type', self.default_molecule_type) == 'protein':
+            molecule_type = properties.get('molecule_type', self.default_molecule_type)
+            if molecule_type == 'protein':
                 # Protein component
                 comp = Protein(name, properties, self.comp_defaults)
-            elif properties.get('molecule_type', self.default_molecule_type) == 'cooke_lipid':
+            elif molecule_type in ['lipid','cooke_lipid']:
                 # Lipid component
                 comp = Lipid(name, properties, self.comp_defaults)
                 spiral = False
-            elif properties.get('molecule_type', self.default_molecule_type) == 'crowder':
+            elif molecule_type in ['crowder']:
                 # Crowder component
                 comp = Crowder(name, properties, self.comp_defaults)
+            elif molecule_type in ['rna']:
+                # Crowder component
+                comp = RNA(name, properties, self.comp_defaults)
             else:
                 # Generic component
                 comp = Component(name, properties, self.comp_defaults)
-            comp.calc_comp_seq(self.ffasta,self.pdb_folder)
-            comp.calc_comp_properties(residues=self.residues, pH=self.pH, verbose=self.verbose)
-            if comp.restr:
-                comp.calc_x_from_pdb(self.pdb_folder, self.use_com)
-                comp.calc_dmap()
+            
+            comp.eps_lj = self.eps_lj
+            comp.calc_properties(pH=self.pH, verbose=self.verbose, spiral=spiral)
+            if comp.restraint:
+                if comp.restraint_type == 'go':
+                    comp.init_restraint_force(
+                        eps_lj=self.eps_lj, cutoff_lj=self.cutoff_lj,
+                        eps_yu=self.eps_yu, k_yu = self.k_yu
+                    )
+                else:
+                    comp.init_restraint_force()
                 self.use_restraints = True
-                if self.restraint_type == 'harmonic':
-                    comp.calc_ssdomains(self.fdomains)
-                elif self.restraint_type == 'go':
-                    comp.calc_go_scale(
-                            pdb_folder=self.pdb_folder, bfac_width=self.bfac_width,
-                            bfac_shift=self.bfac_shift, pae_width=self.pae_width,
-                            pae_shift=self.pae_shift, colabfold=self.colabfold)
-            else:
-                spiral = False if self.topol=='shift_ref_bead' else spiral
-                comp.calc_x_linear(spiral=spiral)
 
             self.components = np.append(self.components, comp)
 
@@ -100,9 +91,11 @@ class Sim:
 
         # move lipids at the end of the array
         molecule_types = np.asarray([c.molecule_type for c in self.components])
+        self.nlipids = np.sum([c.nmol if c.molecule_type == 'lipid' else 0 for c in self.components])
         self.ncookelipids = np.sum([c.nmol if c.molecule_type == 'cooke_lipid' else 0 for c in self.components])
         self.nproteins = np.sum([c.nmol if c.molecule_type == 'protein' else 0 for c in self.components])
         self.ncrowders = np.sum([c.nmol if c.molecule_type == 'crowder' else 0 for c in self.components])
+        self.nrnas = np.sum([c.nmol if c.molecule_type == 'rna' else 0 for c in self.components])
 
         if ((self.ncomponents > 1) or (self.nmolecules > 1)) and (self.topol in ['single', 'center']):
             raise ValueError("Topol 'center' incompatible with multiple molecules.")
@@ -127,73 +120,69 @@ class Sim:
         a, b, c = build.build_box(self.box[0],self.box[1],self.box[2])
         self.system.setDefaultPeriodicBoxVectors(a, b, c)
 
+
+        # init interaction parameters (required before make components)
+        self.eps_yu, self.k_yu = interactions.genParamsDH(self.temp,self.ionic)
+
         # make components
         self.make_components()
         self.count_components()
 
-        self.bond_pairlist = []
-
-        # init interaction parameters
-        self.eps_yu, self.k_yu = interactions.genParamsDH(self.temp,self.ionic)
-
-        # init restraints
-        if self.use_restraints:
-            self.cs = interactions.init_restraints(self.restraint_type)
-            self.restr_pairlist = []
-            if self.restraint_type == 'go':
-                self.scLJ_pairlist = []
-                self.scYU_pairlist = []
-                self.scLJ = interactions.init_scaled_LJ(self.eps_lj,self.cutoff_lj)
-                self.scYU = interactions.init_scaled_YU(self.eps_yu,self.k_yu)
-
         # init interactions
-        self.hb, self.ah, self.yu = interactions.init_protein_interactions(
+        self.ah, self.yu = interactions.init_nonbonded_interactions(
             self.eps_lj,self.cutoff_lj,self.eps_yu,self.k_yu,self.cutoff_yu,self.fixed_lambda
             )
+        if self.nlipids > 0:
+            self.cos, self.cn = interactions.init_lipid_interactions(
+            self.eps_lj,self.eps_yu,self.cutoff_yu,factor=1.9
+            )
         if self.ncookelipids > 0:
-            self.wcafene, self.cos, self.cn = interactions.init_cooke_lipid_interactions(
-            self.eps_lj,self.eps_yu,self.cutoff_yu
+            if self.nlipids > 0:
+                raise
+            self.cos, self.cn = interactions.init_lipid_interactions(
+            self.eps_lj,self.eps_yu,self.cutoff_yu,factor=3.0
             )
 
         self.nparticles = 0 # bead counter
         self.grid_counter = 0 # molecule counter for xy and xyz grids
 
         self.pos = []
-        # self.make_sys_dataframe() # pool component information into one df
-        # print(self.df_sys, flush=True)
-        if self.topol == 'slab':
-            self.xyzgrid = build.build_xyzgrid(self.nproteins,[self.box[0],self.box[1],2*self.slab_width])
-            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width])
-            if self.ncrowders > 0:
-                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-self.slab_outer])
+
+        if self.topol == 'slab': # proteins + rna
+            self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas,[self.box[0],self.box[1],2*self.box[0]])
+            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.box[0]])
+            if self.ncrowders > 0: # crowder
+                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-2*self.box[0]])
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
-                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.slab_outer]), axis=0)
+                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+2*self.box[0]]), axis=0)
         elif self.topol == 'grid':
             self.xyzgrid = build.build_xyzgrid(self.nmolecules,self.box)
+        if self.nlipids > 0:
+            self.bilayergrid = build.build_xygrid(int(self.nlipids*1.05),self.box)
+            if (self.nproteins + self.nrnas) > 0:
+                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.),[self.box[0],self.box[1],self.box[2]/2.-self.box[0]])
+                self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
         if self.ncookelipids > 0:
             self.bilayergrid = build.build_xygrid(int(self.ncookelipids*1.05),self.box)
-            if self.nproteins > 0:
-                xyzgrid = build.build_xyzgrid(np.ceil(self.nproteins/2.),[self.box[0],self.box[1],self.box[2]/2.-self.box[0]])
+            if (self.nproteins + self.nrnas) > 0:
+                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.),[self.box[0],self.box[1],self.box[2]/2.-self.box[0]])
                 self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
 
         for cidx, comp in enumerate(self.components):
-
             for idx in range(comp.nmol):
                 if self.verbose:
                     print(f'Component {cidx}, Molecule {idx}: {comp.name}')
                 # particle definitions
-                self.add_mdtraj_topol(comp.seq)
+                self.add_mdtraj_topol(comp)
                 self.add_particles_system(comp.mws)
 
                 # add interactions + restraints
-                if comp.molecule_type == 'protein':
+                if comp.molecule_type in ['protein','crowder']:
                     xs = self.place_molecule(comp)
-                elif comp.molecule_type == 'crowder':
-                    xs = self.place_molecule(comp)
-                elif comp.molecule_type == 'cooke_lipid':
+                elif comp.molecule_type in ['lipid','cooke_lipid']:
                     xs = self.place_bilayer(comp)
                 elif comp.molecule_type == 'rna':
-                    raise
+                    xs = self.place_molecule(comp)
                 self.add_interactions(comp)
 
                 # add restraints towards box center
@@ -211,20 +200,23 @@ class Sim:
     def add_forces_to_system(self):
         """ Add forces to system. """
 
-        for force in [self.hb, self.yu, self.ah]:
+        # Intermolecular forces
+        for force in [self.yu, self.ah]:
             self.system.addForce(force)
-        if self.ncookelipids > 0:
-            for force in [self.wcafene, self.cos, self.cn]:
-                self.system.addForce(force)
-        if self.use_restraints:
-            self.system.addForce(self.cs)
-            print(f'Number of restraints: {self.cs.getNumBonds()}')
 
-            if (self.restraint_type == 'go'):
-                self.system.addForce(self.scLJ)
-                self.system.addForce(self.scYU)
-                # print(f'Number of scaled LJ pairs: {self.scLJ.getNumBonds()}')
-                # print(f'Number of scaled YU pairs: {self.scYU.getNumBonds()}')
+        if (self.nlipids > 0) or (self.ncookelipids > 0):
+            for force in [self.cos, self.cn]:
+                self.system.addForce(force)
+
+        # Intramolecular forces
+        for comp in self.components:
+            comp.get_forces() # bonded, angles, restraints...
+            for force in comp.forces:
+                self.system.addForce(force)
+            if comp.restraint:
+                print(f'Number of restraints for comp {comp.name}: {comp.cs.getNumBonds()}')
+
+        # Equilibration forces
         if self.slab_eq:
             self.system.addForce(self.rcent)
         if self.bilayer_eq:
@@ -299,189 +291,109 @@ class Sim:
 
     def add_bonds(self, comp, offset):
         """ Add bond forces. """
-        for i in range(0,comp.nres-1):
-            for j in range(i, comp.nres):
-                if comp.bond_map[i,j]:
-                    if comp.molecule_type in ["protein", "crowder"]:
-                        d0 = 0.5 * (comp.bondlengths[i] + comp.bondlengths[j])
-                        if comp.restr:
-                            if self.restraint_type == 'harmonic':
-                                ss = build.check_ssdomain(comp.ssdomains,i,j,req_both=False)
-                                d = comp.dmap[i,j] if ss else d0
-                            elif self.restraint_type == 'go':
-                                # bondscale = max(0, 1. - 5.*comp.scale[i,j])
-                                d = comp.bondscale[i,j] * d0 + (1. - comp.bondscale[i,j]) * comp.dmap[i,j]
-                                # d = comp.scale[i,j] * comp.dmap[i,j] + (1. - comp.scale[i,j]) * d0
-                        else:
-                            d = d0
-                        bidx = self.hb.addBond(i+offset, j+offset, d*unit.nanometer, self.kb*unit.kilojoules_per_mole/(unit.nanometer**2))
-                        self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,self.kb]) # 1-based
-                        self.yu.addExclusion(i+offset, j+offset)
-                        self.ah.addExclusion(i+offset, j+offset)
-                        if self.ncookelipids > 0:
-                            self.cos.addExclusion(i+offset, j+offset)
-                            self.cn.addExclusion(i+offset, j+offset)
 
-                    if comp.molecule_type == "cooke_lipid":
-                        if j-i == 1:
-                            d = 0.5 * (comp.bondlengths[i] + comp.bondlengths[j])
-                            kfene = 20*3*self.eps_lj/d/d
-                            bidx = self.wcafene.addBond(i+offset, j+offset, [d*unit.nanometer, kfene*unit.kilojoules_per_mole/(unit.nanometer**2)])
-                            self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,kfene]) # 1-based
+        exclusion_map = comp.add_bonds(offset)
+        self.add_exclusions(exclusion_map)
 
-                            self.ah.addExclusion(i+offset, j+offset)
-                            self.yu.addExclusion(i+offset, j+offset)
-                            self.cos.addExclusion(i+offset, j+offset)
-                            self.cn.addExclusion(i+offset, j+offset)
-                        else:
-                            d = 0.5 * (comp.bondlengths[i] + comp.bondlengths[j])
-                            kbend = 20*self.eps_lj/d/d
-                            bidx = self.hb.addBond(i+offset, j+offset, 4*d*unit.nanometer, kbend*unit.kilojoules_per_mole/(unit.nanometer**2))
-                            self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,4*d,kbend]) # 1-based
+    def add_angles(self, comp, offset):
+        """ Add bond forces. """
 
-                # # Add weakened LJ, full YU, if restraint is weak
-                # if comp.scale[i,j] < 0.98:
-                #     self.scLJ.addBond(i+offset,j+offset, [s*unit.nanometer, l*unit.dimensionless, n*unit.dimensionless])
-                #     qij = qi * qj * self.eps_yu * self.eps_yu *unit.nanometer*unit.kilojoules_per_mole *unit.nanometer * unit.kilojoules_per_mole
-                #     self.scYU.addBond(i+offset,j+offset, [qij, n*unit.dimensionless])
-                #     scaled_LJYU_pairlist.append([i+offset+1,j+offset+1, n])
+        exclusion_map = comp.add_angles(offset)
+        self.add_exclusions(exclusion_map)
 
-    def add_restraints(self, comp, offset, min_scale = 0.02):
+    def add_restraints(self, comp, offset, min_scale = 0.1, exclude_nonbonded = True):
         """ Add restraints to single molecule. """
         # restr_pairlist = []
-        for i in range(0,comp.nres-2):
-            # qi = comp.qs[i]
-            for j in range(i+2,comp.nres):
-                # check if below cutoff
-                if comp.dmap[i,j] > self.cutoff_restr:
-                    continue
-                # harmonic
-                if self.restraint_type == 'harmonic':
-                    ss = check_ssdomain(comp.ssdomains,i,j,req_both=True)
-                    if not ss:
-                        continue
-                    k = self.k_harmonic
-                # go
-                elif self.restraint_type == 'go':
-                    if comp.scale[i,j] < min_scale:
-                        continue
-                    k = self.k_go * comp.scale[i,j]
-                    # add scaled pseudo LJ, YU for low restraints
-                    if comp.bondscale[i,j] > min_scale:
-                        self.scLJ, scaled_pair = interactions.add_scaled_lj(self.scLJ, i, j, offset, comp)
-                        self.scLJ_pairlist.append(scaled_pair)
-                        if comp.qs[i] * comp.qs[j] != 0.:
-                            self.scYU, scaled_pair = interactions.add_scaled_yu(self.scYU, i, j, offset, comp)
-                            self.scYU_pairlist.append(scaled_pair)
 
-                self.cs, restr_pair = interactions.add_single_restraint(
-                        self.cs, self.restraint_type, comp.dmap[i,j], k,
-                        i+offset, j+offset)
-                self.restr_pairlist.append(restr_pair)
+        exclusion_map = comp.add_restraints(offset, min_scale=min_scale)
+        if exclude_nonbonded: # exclude ah, yu when restraining
+            self.add_exclusions(exclusion_map)
 
-                # exclude LJ, YU for restrained pairs
-                self.ah = interactions.add_exclusion(self.ah, i+offset, j+offset)
-                self.yu = interactions.add_exclusion(self.yu, i+offset, j+offset)
-                if self.ncookelipids > 0:
-                    self.cos.addExclusion(i+offset, j+offset)
-                    self.cn.addExclusion(i+offset, j+offset)
-
-        # return restr_pairlist
+    def add_exclusions(self, exclusion_map):
+        # exclude LJ, YU for restrained pairs
+        for excl in exclusion_map:
+            self.ah = interactions.add_exclusion(self.ah, excl[0], excl[1])
+            self.yu = interactions.add_exclusion(self.yu, excl[0], excl[1])
+            if self.nlipids > 0 or self.ncookelipids > 0:
+                self.cos.addExclusion(excl[0], excl[1])
+                self.cn.addExclusion(excl[0], excl[1])
 
     def add_interactions(self,comp):
         """
         Protein interactions for one molecule of composition comp
         """
 
-        offset = self.nparticles - comp.nres # to get indices of current comp in context of system
+        offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
 
         # Add Ashbaugh-Hatch
         for sig, lam in zip(comp.sigmas, comp.lambdas):
-            if comp.molecule_type == 'cooke_lipid':
+            if comp.molecule_type in ['lipid', 'cooke_lipid']:
                 self.ah.addParticle([sig*unit.nanometer, lam, 0])
             elif comp.molecule_type == 'crowder':
                 self.ah.addParticle([sig*unit.nanometer, lam, -1])
-            else:
+            else: # protein, RNA
                 self.ah.addParticle([sig*unit.nanometer, lam, 1])
-            if self.ncookelipids > 0:
-                if comp.molecule_type == 'cooke_lipid':
-                    self.cos.addParticle([sig*unit.nanometer, lam, 1])
-                else:
+            if self.nlipids > 0 or self.ncookelipids > 0:
+                if comp.molecule_type in ['lipid', 'cooke_lipid']:
                     self.cos.addParticle([sig*unit.nanometer, lam, 0])
-
+                else:
+                    self.cos.addParticle([sig*unit.nanometer, lam, 1])
         # Add Debye-Huckel
         for q in comp.qs:
             self.yu.addParticle([q])
 
         # Add Charge-Nonpolar Interaction
-        if self.ncookelipids > 0:
+        if self.nlipids > 0 or self.ncookelipids > 0:
             id_cn = 1 if comp.molecule_type == 'protein' else -1
             for sig, alpha, q in zip(comp.sigmas, comp.alphas, comp.qs):
                 self.cn.addParticle([(sig/2)**3, alpha, q, id_cn])
 
         # Add bonds
-        self.add_bonds(comp,offset)
+        self.add_bonds(comp, offset)
+
+        if comp.molecule_type == 'rna':
+            self.add_angles(comp, offset)
 
         # Add restraints
-        if comp.restr:
+        if comp.restraint:
             self.add_restraints(comp,offset)
 
         # write lists
         if self.verbose:
-            self.write_bonds()
-            if comp.restr:
-                self.write_restraints(comp.name)
-                # if self.restraint_type == 'go':
-                    # self.write_scaled_LJYU(comp,scaled_LJYU_pairlist)
-
-    def write_bonds(self):
-        """ Write bonds to file. """
-
-        with open(f'{self.path}/bonds.txt','w') as f:
-            f.write('i\tj\tb_idx\td[nm]\tk[kJ/mol/nm^2]\n')
-            for b in self.bond_pairlist:
-                f.write(f'{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n')
-
-    def write_restraints(self,compname):
-        """ Write restraints to file. """
-
-        with open(f'{self.path}/restr.txt','w') as f:
-            f.write('i j d[nm] fc\n')
-            for r in self.restr_pairlist:
-                f.write(f'{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f}\n')
-
-        if self.restraint_type == 'go':
-            with open(f'{self.path}/scaled_LJ_{compname}.txt','w') as f:
-                f.write('i+offset+1, j+offset+1, s, l, comp.bondscale[i,j]\n') # 1-based
-                for r in self.scLJ_pairlist:
-                    f.write(f'{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}\n')
-
-            with open(f'{self.path}/scaled_YU_{compname}.txt','w') as f:
-                f.write('i+offset+1, j+offset+1, comp.bondscale[i,j]\n') # 1-based
-                for r in self.scYU_pairlist:
-                    f.write(f'{int(r[0])} {int(r[1])} {r[2]:.4f}\n')
-    # def write_scaled_LJYU(self,comp,scaled_LJYU_pairlist):
-    #     with open(f'{self.path}/scaled_LJYU_{comp.name}_idx.txt','w') as f:
-    #         f.write('i j scaling\n')
-    #         for r in scaled_LJYU_pairlist:
-    #             f.write(f'{int(r[0])} {int(r[1])} {r[2]:.4f}\n')
+            comp.write_bonds(self.path)
+            if comp.restraint:
+                comp.write_restraints(self.path)
 
     def add_eq_restraints(self,comp):
         """ Add equilibration restraints. """
 
-        offset = self.nparticles - comp.nres # to get indices of current comp in context of system
-        for i in range(0,comp.nres):
+        offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
+        for i in range(0,comp.nbeads):
             self.rcent.addParticle(i+offset)
 
-    def add_mdtraj_topol(self,seq):
+    def add_mdtraj_topol(self, comp):
         """ Add one molecule to mdtraj topology. """
-
+        
+        # Note: Move this to component eventually.
         chain = self.top.add_chain()
-        for idx,resname in enumerate(seq):
-            res = self.top.add_residue(self.residues.loc[resname].three, chain, resSeq=idx+1)
-            self.top.add_atom('CA', element=md.element.carbon, residue=res)
-        for i in range(chain.n_atoms-1):
-            self.top.add_bond(chain.atom(i),chain.atom(i+1))
+        
+        if comp.molecule_type == 'rna':
+            for idx,resname in enumerate(comp.seq):
+                res = self.top.add_residue(resname, chain, resSeq=idx+1)
+                self.top.add_atom(resname+"P", element=md.element.phosphorus, residue=res)
+                self.top.add_atom(resname+"N", element=md.element.nitrogen, residue=res)
+            for i in range(comp.nbeads-1):
+                for j in range(1,comp.nbeads):
+                    if comp.bond_check(i,j):
+                        self.top.add_bond(chain.atom(i), chain.atom(j))
+        else:
+            for idx,resname in enumerate(comp.seq):
+                res = self.top.add_residue(resname, chain, resSeq=idx+1)
+                self.top.add_atom('CA', element=md.element.carbon, residue=res)
+            for i in range(chain.n_atoms-1):
+                if comp.bond_check(i,i+1):
+                    self.top.add_bond(chain.atom(i), chain.atom(i+1))
+
 
     def add_particles_system(self,mws):
         """ Add particles of one molecule to openMM system. """
@@ -492,31 +404,25 @@ class Sim:
     def simulate(self):
         """ Simulate. """
 
-        fcheck_in = f'{self.path}/{self.frestart}'
-        fcheck_out = f'{self.path}/restart.chk'
-        append = False
-
-        if self.restart == 'pdb' and os.path.isfile(fcheck_in):
-            pdb = app.pdbfile.PDBFile(fcheck_in)
+        if self.restart == 'pdb':
+            pdb = app.pdbfile.PDBFile(self.frestart)
         else:
             pdb = app.pdbfile.PDBFile(self.pdb_cg)
 
         # use langevin integrator
-        integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
-        if self.random_number_seed != None:
-            integrator.setRandomNumberSeed(self.random_number_seed)
+        integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,0.01/unit.picosecond,0.01*unit.picosecond)
         print(integrator.getFriction(),integrator.getTemperature())
 
         # assemble simulation
         platform = openmm.Platform.getPlatformByName(self.platform)
         if self.platform == 'CPU':
-            print('Running on', platform.getName())
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
         else:
-            if os.environ.get('CUDA_VISIBLE_DEVICES') == None:
-                platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
-            print('Running on', platform.getName())
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
+
+        fcheck_in = f'{self.path}/{self.frestart}'
+        fcheck_out = f'{self.path}/restart.chk'
+        append = False
 
         if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
             if not os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'):
@@ -546,7 +452,7 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.slab_eq:
+        if self.slab_eq and not os.path.isfile(fcheck_in):
             print(f"Starting equilibration with k_eq == {self.k_eq:.4f} kJ/(mol*nm) for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
@@ -560,7 +466,7 @@ class Sim:
                     print(f'Removing external force {index}')
                     self.system.removeForce(index)
                     break
-            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,0.01/unit.picosecond,0.01*unit.picosecond)
             if self.platform == 'CPU':
                 simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
             else:
@@ -569,7 +475,7 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.bilayer_eq:
+        if self.bilayer_eq and not os.path.isfile(fcheck_in):
             print(f"Starting equilibration under zero lateral tension for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
@@ -578,7 +484,6 @@ class Sim:
             rep.report(simulation,state_final)
             pdb = app.pdbfile.PDBFile(f'{self.path}/equilibration_final.pdb')
             topology = pdb.getTopology()
-            a, b, c = state_final.getPeriodicBoxVectors()
             topology.setPeriodicBoxVectors(state_final.getPeriodicBoxVectors())
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
@@ -590,20 +495,19 @@ class Sim:
                         break
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,0.01/unit.picosecond,0.01*unit.picosecond)
             if self.platform == 'CPU':
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
             else:
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform)
             simulation.context.setPositions(state_final.getPositions())
-            simulation.context.setPeriodicBoxVectors(a, b, c)
-            #print(f'Minimizing energy.')
-            #simulation.minimizeEnergy()
+            print(f'Minimizing energy.')
+            simulation.minimizeEnergy()
 
         # run simulation
         simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/{self.sysname:s}.dcd',self.wfreq,append=append))
-        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',self.logfreq,
-                step=True,speed=True,elapsedTime=True,potentialEnergy=self.report_potential_energy,separator='\t',append=append))
+        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',int(self.wfreq*10),
+                step=True,speed=True,elapsedTime=True,separator='\t',append=append))
 
         print("STARTING SIMULATION", flush=True)
         if self.runtime > 0: # in hours
@@ -619,10 +523,10 @@ class Sim:
         now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
-        state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
-        rep = app.pdbreporter.PDBReporter(f'{self.path}/{self.sysname}_{dt_string}.pdb',0)
+        state_final = simulation.context.getState(getPositions=True)
+        rep = app.pdbreporter.PDBReporter(f'{self.sysname}_{dt_string}.pdb',0)
         rep.report(simulation,state_final)
-        rep = app.pdbreporter.PDBReporter(f'{self.path}/checkpoint.pdb',0)
+        rep = app.pdbreporter.PDBReporter('checkpoint.pdb',0)
         rep.report(simulation,state_final)
 
 def run(path='.',fconfig='config.yaml',fcomponents='components.yaml'):

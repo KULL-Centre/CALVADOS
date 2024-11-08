@@ -5,36 +5,33 @@ import subprocess
 import numpy as np
 from argparse import ArgumentParser
 
-parser = ArgumentParser()
-parser.add_argument('--name',nargs='?',required=True,type=str)
-args = parser.parse_args()
-
 cwd = os.getcwd()
-sysname = f'{args.name:s}'
+sysname = 'mixed_system'
 
-# set the side length of the cubic box
-L = 20
+# set the side length of the slab box
+Lx = 20
+Lz = 150
 
 # set the saving interval (number of integration steps)
 N_save = 100
 
 # set final number of frames to save
-N_frames = 1000
+N_frames = 100000
 
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
-  box = [L, L, L], # nm
+  box = [Lx, Lx, Lz], # nm
   temp = 293.15, # 20 degrees Celsius
   ionic = 0.15, # molar
   pH = 7.5, # 7.5
-  topol = 'center',
+  topol = 'slab',
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
   runtime = 0, # overwrites 'steps' keyword if > 0
-  platform = 'CPU', # or CUDA
+  platform = 'CPU',
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
@@ -44,24 +41,29 @@ config = Config(
 )
 
 # PATH
-path = f'{cwd}/{sysname:s}'
+path = f'{cwd}/{sysname}'
 subprocess.run(f'mkdir -p {path}',shell=True)
 
 config.write(path,name='config.yaml')
 
 components = Components(
   # Defaults
-  molecule_type = 'protein',
-  nmol = 1, # number of molecules
   restraint = False, # apply restraints
   charge_termini = 'both', # charge N or C or both
-
-  # INPUT
-  fresidues = f'{cwd}/input/residues.csv', # residue definitions
-  ffasta = f'{cwd}/input/idr.fasta', # residue definitions
+  fresidues = f'{cwd}/residues_C2RNA.csv', # residue definitions
+  ffasta = f'{cwd}/mix.fasta',
+ 
+  # RNA settings
+  rna_kb1 = 1400.0,
+  rna_kb2 = 2200.0,
+  rna_ka = 4.20,
+  rna_pa = 3.14,
+  rna_nb_sigma = 0.4,
+  rna_nb_scale = 15,
+  rna_nb_cutoff = 2.0
 )
 
-components.add(name=args.name)
-
+components.add(name='polyR30', molecule_type='rna', nmol=25)
+components.add(name='FUSRGG3', molecule_type='protein', nmol=100)
 components.write(path,name='components.yaml')
 

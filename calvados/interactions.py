@@ -8,10 +8,10 @@ def genParamsDH(temp,ionic):
     # Calculate the prefactor for the Yukawa potential
     fepsw = lambda T : 5321/T+233.76-0.9297*T+0.1417*1e-2*T*T-0.8292*1e-6*T**3
     epsw = fepsw(temp)
-    lB = 1.6021766**2/(4*np.pi*8.854188*epsw)*6.02214076*1000/kT
+    lB = 1.6021766**2/(4*np.pi*8.854188*epsw)*6.022*1000/kT
     eps_yu = lB*kT
     # Calculate the inverse of the Debye length
-    k_yu = np.sqrt(8*np.pi*lB*ionic*6.02214076/10)
+    k_yu = np.sqrt(8*np.pi*lB*ionic*6.022/10)
     return eps_yu, k_yu
 
 def init_bonded_interactions():
@@ -29,7 +29,7 @@ def init_ah_interactions(eps,rc,fixed_lambda):
     # intermolecular interactions
     energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
     #ah = openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/{rc})^12-(0.5*(s1+s2)/{rc})^6')
-    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
+    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
 
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
@@ -41,6 +41,7 @@ def init_ah_interactions(eps,rc,fixed_lambda):
 
     print('Ashbaugh-Hatch potential between particles with lambda=1 and sigma=0.68 at',rc*unit.nanometer,end=': ')
     print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*unit.kilojoules_per_mole)
+    # print('pbc ah: ', ah.usesPeriodicBoundaryConditions())
     return ah
 
 def init_yu_interactions(eps, k, rc):
@@ -59,23 +60,33 @@ def init_yu_interactions(eps, k, rc):
 
     return yu
 
-def init_protein_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
+    # print('pbc yu: ', yu.usesPeriodicBoundaryConditions())
+
+def init_nonbonded_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
     """ Define protein interaction expressions (without restraints). """
 
-    hb = init_bonded_interactions()
+    # hb = init_bonded_interactions()
     ah = init_ah_interactions(eps_lj, cutoff_lj, fixed_lambda)
     yu = init_yu_interactions(eps_yu, k_yu, cutoff_yu)
 
-    return hb, ah, yu
+    return ah, yu
 
-def init_cooke_lipid_interactions(eps_lj,eps_yu,cutoff_yu):
+def init_angles():
+    ha = openmm.HarmonicAngleForce()
+    ha.setUsesPeriodicBoundaryConditions(True)
+    return ha
+
+def init_lipid_interactions(eps_lj, eps_yu, cutoff_yu, factor=1.9):
     """ Define lipid interaction expressions. """
 
-    wcafene = init_wcafene_interactions(3*eps_lj)
-    cos = init_cosine_interactions(3*eps_lj)
+    # harmonic angles
+    cos = init_cosine_interactions(factor*eps_lj)
     cn = init_charge_nonpolar_interactions(eps_yu, cutoff_yu)
+    return cos, cn
 
-    return wcafene, cos, cn
+def init_wcafene(eps_lj):
+    wcafene = init_wcafene_interactions(3*eps_lj)
+    return wcafene
 
 def init_restraints(restraint_type):
     """ Initialize restraints. """
@@ -107,7 +118,7 @@ def init_scaled_YU(eps_yu,k_yu):
     """ Initialize restraints. """
 
     shift = np.exp(-k_yu*4.0)/4.0
-    scYU = openmm.CustomBondForce('n*q*{eps_yu}*(exp(-{k_yu}*r)/r-{shift})')
+    scYU = openmm.CustomBondForce(f'n*q*{eps_yu}*(exp(-{k_yu}*r)/r-{shift})')
     scYU.addPerBondParameter('q')
     scYU.addPerBondParameter('n')
     scYU.setUsesPeriodicBoundaryConditions(True)
@@ -161,7 +172,6 @@ def add_scaled_yu(scYU, i, j, offset, comp):
 
 def add_exclusion(force, i: int, j: int):
     """ Add exclusions to a list of openMM forces """
-
     force.addExclusion(i,j)
     return force
 
@@ -177,10 +187,9 @@ def init_wcafene_interactions(eps):
     return wcafene
 
 def init_cosine_interactions(eps):
-    """ Define cosine interaction (Cooke and Deserno lipid model, DOI: https://doi.org/10.1063/1.2135785). """
-
+    """ Define cosine interaction (Cooke and Deserno lipid model). """
     cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
-    cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
+    cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(delta(id1+id2)*l1*l2,1,0); rc=2^(1/6)*s; s=0.5*(s1+s2)')
     cosine.addPerParticleParameter('s')
     cosine.addPerParticleParameter('l')
     cosine.addPerParticleParameter('id')
@@ -190,8 +199,7 @@ def init_cosine_interactions(eps):
     return cosine
 
 def init_charge_nonpolar_interactions(eps,rc):
-    """ Define charge-nonpolar interaction (lipid model, DOI: https://doi.org/10.1063/1.5058234 and DOI: https://doi.org/10.1073/pnas.2311700120). """
-
+    """ Define charge-nonpolar interaction (lipid model). """
     cn = openmm.CustomNonbondedForce(f'-step(id1+id2)*{eps}*alphaq2R3/2*(1/r-1/{rc}); alphaq2R3=alpha1*q2^2*R31+alpha2*q1^2*R32')
     cn.addPerParticleParameter('R3')
     cn.addPerParticleParameter('alpha')
@@ -201,3 +209,5 @@ def init_charge_nonpolar_interactions(eps,rc):
     cn.setCutoffDistance(rc*unit.nanometer)
     cn.setForceGroup(1)
     return cn
+
+

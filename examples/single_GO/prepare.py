@@ -13,7 +13,7 @@ cwd = os.getcwd()
 sysname = f'{args.name:s}'
 
 # set the side length of the cubic box
-L = 20
+L = 25
 
 # set the saving interval (number of integration steps)
 N_save = 100
@@ -53,14 +53,20 @@ components = Components(
   # Defaults
   molecule_type = 'protein',
   nmol = 1, # number of molecules
-  restraint = False, # apply restraints
+  restraint = True, # apply restraints
   charge_termini = 'both', # charge N or C or both
 
   # INPUT
   fresidues = f'{cwd}/input/residues.csv', # residue definitions
-  ffasta = f'{cwd}/input/idr.fasta', # residue definitions
-)
+  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
 
+  # RESTRAINTS
+  restraint_type = 'go', # harmonic or go
+  use_com = True, # apply on centers of mass instead of CA
+  colabfold = 0, # PAE format (EBI AF=0, Colabfold=1&2)
+  k_go = 10., # Restraint force constant
+
+)
 components.add(name=args.name)
 
 components.write(path,name='components.yaml')

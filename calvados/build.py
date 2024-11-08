@@ -80,18 +80,22 @@ def draw_starting_vec(box):
     """
     vec = np.random.random(size=3) * box
     return vec
-
-def build_linear(bondlengths):
+ 
+def build_linear(z_bondlengths, n_per_res=1, ys=None):
     """
-    linear chain growing in z direction
+    linear chain growing in z direction with possible extra beads at y offset n_per_res*ys
     centered at [0,0,0]
     """
-    z = 0
-    N = len(bondlengths)
-    coords = np.zeros((N,3))
-    for idx in range(N-1):
-        z += 0.5 * (bondlengths[idx] + bondlengths[idx+1])
-        coords[idx+1,2] = z
+    N = len(z_bondlengths)
+    zs = np.zeros(N)
+    zs[1:] = [(z_bondlengths[idx] + z_bondlengths[idx+1]) / 2 for idx in range(N-1)]
+    zs = np.cumsum(zs)
+    coords = np.zeros((N*n_per_res,3))
+    if ys == None:
+        ys = np.zeros(N)
+    for idx, (z, y) in enumerate(zip(zs,ys)):
+        for jdx in range(n_per_res):
+            coords[idx*n_per_res + jdx] = [0,jdx*y,z]
     coords[:,2] -= coords[:,2].mean()
     return coords
 
@@ -101,7 +105,7 @@ def p2c(r, phi):
     """
     return (r * np.cos(phi), r * np.sin(phi))
 
-def build_spiral(n, delta=0, arc=.38, separation=.7):
+def build_spiral(bondlengths, delta=0, arc=.38, separation=.7, n_per_res=1):
     """
     create points on an Archimedes' spiral
     with `arc` giving the length of arc between two points
@@ -112,8 +116,9 @@ def build_spiral(n, delta=0, arc=.38, separation=.7):
     b = separation / (2 * np.pi)
     phi = float(r) / b
     coords = []
-    for i in range(n):
-        coords.append(list(p2c(r, phi))+[0])
+    for i,z in enumerate(bondlengths):
+        for j in range(n_per_res): # number of beads per residue (placed along z with bondlength)
+            coords.append(list(p2c(r, phi))+[j*z]) # j*z = 0 for n_per_res=1
         phi += float(arc) / r
         r = b * phi
     return np.array(coords)+delta
