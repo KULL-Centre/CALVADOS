@@ -102,7 +102,7 @@ def pool_residues(depth, u):
 
     return depth_res, depth_res_per_atom
 
-def write_bfac(fpdb, depth_res_per_atom)
+def write_bfac(fpdb, depth_res_per_atom):
     # depth_norm = depth_res_per_atom / np.max(depth_res_per_atom) * 100.
 
     u.add_TopologyAttr('tempfactors')
