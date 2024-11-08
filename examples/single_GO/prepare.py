@@ -38,9 +38,6 @@ config = Config(
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
-
-  # JOB SETTINGS (ignore if running locally)
-  submit = False
 )
 
 # PATH
@@ -65,7 +62,6 @@ components = Components(
   use_com = True, # apply on centers of mass instead of CA
   colabfold = 0, # PAE format (EBI AF=0, Colabfold=1&2)
   k_go = 10., # Restraint force constant
-
 )
 components.add(name=args.name)
 

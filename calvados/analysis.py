@@ -1,5 +1,6 @@
 import numpy as np
 import numba as nb
+import pandas as pd
 
 import MDAnalysis
 from MDAnalysis import Merge
@@ -13,6 +14,12 @@ from scipy.optimize import curve_fit
 from scipy.stats import sem
 
 from calvados.build import get_ssdomains
+
+import sys
+from pathlib import Path
+PACKAGEDIR = Path(__file__).parent.absolute()
+sys.path.append(f'{str(PACKAGEDIR):s}/BLOCKING')
+from main import BlockAnalysis
 
 @nb.jit(nopython=True)
 def calc_energy(dmap,sig,lam,rc_lj,eps_lj,qmap,
@@ -213,17 +220,16 @@ def calc_rmsd(u,uref,select='all',f_out=None,step=1):
         u_mean2.select_atoms(select).write(f_out)
     return Rref.results.rmsd.T,Rmean.results.rmsd.T,RMSFmean.results.rmsf
 
-def get_masses(seq,residues,patch_termini=True):
+def get_masses(seq,residues,charge_termini=True):
     lseq = list(seq)
     masses = residues.loc[lseq,'MW'].values
-    if patch_termini:
+    if charge_termini:
         masses[0] += 2.
         masses[-1] += 16.
     return masses
 
 def calc_rg(u,ag,seq=[],residues=[],start=None,stop=None,step=None):
     if len(seq) > 0:
-        lseq = list(seq)
         masses = get_masses(seq,residues)
         # print(masses)
     else:
@@ -338,6 +344,38 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
         verr = perr[0]
     return ij, dij, r0, v, verr
 
+def save_rg(path,name,residues_file,output_prefix,nskip,select='all'):
+    residues = pd.read_csv(residues_file).set_index('three')
+    u = MDAnalysis.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
+    ag = u.select_atoms(select)
+    rgs = calc_rg(u,ag,ag.resnames.tolist(),residues,start=nskip)
+    block_rg = BlockAnalysis(rgs)
+    block_rg.SEM()
+    df_analysis = pd.DataFrame(index=['Rg'],columns=['value','error'])
+    df_analysis.loc['Rg','value'] = np.mean(rgs)
+    df_analysis.loc['Rg','error'] = block_rg.sem
+    df_analysis.to_csv(output_prefix+'/Rg.csv')
+
+def save_ree(path,name,output_prefix,nskip,select='all'):
+    u = MDAnalysis.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
+    ag = u.select_atoms(select)
+    rees, _, _ = calc_ete(u,ag,start=nskip)
+    block_ree = BlockAnalysis(rees)
+    block_ree.SEM()
+    df_analysis = pd.DataFrame(index=['Ree'],columns=['value','error'])
+    df_analysis.loc['Ree','value'] = np.mean(rees)
+    df_analysis.loc['Ree','error'] = block_ree.sem
+    df_analysis.to_csv(output_prefix+'/Ree.csv')
+
+def save_nu(path,name,output_prefix,nskip,select='all'):
+    u = MDAnalysis.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
+    ag = u.select_atoms(select)
+    _, _, _, nu, nu_err = fit_scaling_exp(u,ag,start=nskip)
+    df_analysis = pd.DataFrame(index=['nu'],columns=['value','error'])
+    df_analysis.loc['nu','value'] = nu
+    df_analysis.loc['nu','error'] = nu_err
+    df_analysis.to_csv(output_prefix+'/nu.csv')
+
 def convert_h(hs,Lseq,Lxy,mw):
     """
     Convert slab histograms to mM and mg/ml
@@ -387,12 +425,18 @@ def calc_zpatch(z,h):
     hpatch = np.array(hpatch)
     return zpatch, hpatch
 
-def center_slab(name,path,ref_atoms='all',start=None,end=None,step=1,input_pdb='top.pdb'):
+def center_slab(path,name,ref_atoms='all',start=None,end=None,step=1,input_pdb='top.pdb'):
     u = MDAnalysis.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
     n_frames = len(u.trajectory[start:end:step])
     ag_ref = u.select_atoms(ref_atoms)
     ag = u.select_atoms('all')
     n_atoms = ag.n_atoms
+    # create list of bonds
+    bonds = []
+    for segment in u.segments:
+        for i in segment.atoms.indices[:-1]:
+            bonds.extend([(i, i+1)])
+    u.add_TopologyAttr('bonds', bonds)
     L = u.dimensions[0]/10
     lz = u.dimensions[2]
     edges = np.arange(0,lz+1,1)
@@ -419,192 +463,45 @@ def center_slab(name,path,ref_atoms='all',start=None,end=None,step=1,input_pdb='
             zpos = ag_ref.positions.T[2]
             h, e = np.histogram(zpos,bins=edges)
             hs[t] = h
+            # make chains whole
+            ts = transformations.unwrap(ag)(ts)
             W.write(ag)
     return hs, z/10.
 
-def calc_angles(t,selection):
-    #td = t.atom_slice(selection)
-    #I = md.compute_inertia_tensor(td)
-    #w, v = np.linalg.eigh(I)
-    #v = v[:,:,0].reshape(-1,3)
-    #ag = u.select_atoms(selection)
-    #v = ag.principal_axes()[2]
-    dvec = md.compute_displacements(t, [[selection[0],selection[-1]]])
-    cos = dvec[:,:,2] / np.linalg.norm(dvec,axis=2)
-    angles = np.rad2deg(np.arccos(cos))
-    #angles = np.empty(0)
-    #for i in range(t.n_frames):
-    #    alpha = np.rad2deg(np.abs(np.arccos(v[i,2] / np.linalg.norm(v[i]))))
-    #    angles = np.append(angles, alpha)
-    return angles
-
-def calc_slab_profiles(path,ref_atoms,sel_atoms,output_prefix,nskip):
+def calc_slab_profiles(path,name,output_folder,ref_atoms,sel_atoms_list=[],start=None,end=None,step=1,input_pdb='top.pdb'):
     """
     path: path where trajectory and pdb are saved
     ref_atoms: reference atoms to shift to the middle of the box
-    sel_atoms: extra atoms for which we calculate the density profile
-    output_prefix: prefix for output files
+    sel_atoms_list: list of extra atoms for which we calculate the density profile
+    output_folder: folder where output files are saved
     nskip: number of frames to skip to reach equilibrium
     """
-    # center trajectory based on tail beads
-    h_ref, z = center_slab(path,path=path,ref_atoms=ref_atoms)
+    # center trajectory based on reference beads
+    h_ref, z = center_slab(path,name,ref_atoms,start,end,step,input_pdb)
     # load centered trajectory
-    traj = md.load_dcd(path+'/traj.dcd',top=path+'/top.pdb')[nskip:]
-    h_ref = h_ref[nskip:]
-    # area of the xy plane
-    area = traj.unitcell_lengths[:,0]*traj.unitcell_lengths[:,1]
+    u = MDAnalysis.Universe(f'{path:s}/'+input_pdb,f'{path:s}/traj.dcd',in_memory=True)
+    n_frames = len(u.trajectory[start:end:step])
+    h_ref = h_ref[start:end:step]
+    binwidth = 1 # 0.1 nm
+    # volume of a slice in nm3
+    volume = u.dimensions[0]*u.dimensions[1]*binwidth/1e3
     # density profile for ref_atoms
-    binwidth = 1
     edges = np.arange(0,z.size+binwidth,binwidth)
-    np.save(output_prefix+'_ref_profile.npy',np.c_[h_ref/area.mean()])
-    h_ref_mean = h_ref.mean(axis=0)/area.mean()
-
+    n_bins = edges.size - 1
+    np.save(output_folder+f'/{name:s}_ref_profile.npy',np.c_[h_ref/volume.mean()])
+    h_ref_mean = h_ref.mean(axis=0)/volume.mean() # number of beads per nm3
+    all_profiles = np.c_[z,h_ref_mean]
     # density profile: selected atoms
-    t_sel = traj.atom_slice(traj.top.select(sel_atoms))
-    h_sel = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_sel.xyz[:,:,2])
-    np.save(output_prefix+'_sel_profile.npy',np.c_[h_sel/area.mean()])
-    h_sel_mean = h_sel.mean(axis=0)/area.mean()
+    for i,sel_atoms in enumerate(sel_atoms_list):
+        ag_sel = u.select_atoms(sel_atoms)
+        h_sel = np.zeros((n_frames,n_bins))
+        for t,ts in enumerate(u.trajectory[start:end:step]):
+            ts = transformations.wrap(ag_sel)(ts)
+            zpos = ag_sel.positions.T[2]
+            h, e = np.histogram(zpos,bins=edges)
+            h_sel[t] = h
+        np.save(output_folder+f'/{name:s}_sel_profile_{i:d}.npy',np.c_[h_sel/volume.mean()])
+        h_sel_mean = h_sel.mean(axis=0)/volume.mean() # number of beads per nm3
+        all_profiles = np.c_[all_profiles,h_sel_mean]
 
-    np.save(output_prefix+'_profiles.npy',np.c_[z,h_ref_mean,h_sel_mean])
-
-def calc_bilayer_prop(path,output_prefix,saving_interval,nskip,cooke_model=False):
-    """
-    path: path where trajectory and pdb are saved
-    output_prefix: prefix for output files
-    saving_interval: time interval between consecutive frames
-    nskip: number of frames to skip to reach equilibrium
-    cooke_model: 3-bead model?
-    """
-    # center trajectory based on tail beads
-    h, z = center_slab(path,path=path,ref_atoms='name Z')
-    # load centered trajectory
-    traj = md.load_dcd(path+'/traj.dcd',top=path+'/top.pdb')[nskip:]
-    h = h[nskip:]
-    # simulation time
-    time = np.arange(traj.n_frames)*saving_interval
-    # area per lipid
-    area = traj.unitcell_lengths[:,0]*traj.unitcell_lengths[:,1]
-    n_beads = 3 if cooke_model else 5
-    area_per_lipid = area/traj.n_atoms*n_beads*2
-    # density profile for lipid tails
-    binwidth = 1
-    edges = np.arange(0,z.size+binwidth,binwidth)
-    h_tail_mean = h.mean(axis=0)/area.mean()
-
-    # density profile: lipid heads
-    t_head = traj.atom_slice(traj.top.select('name B or name O'))
-    h_head = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_head.xyz[:,:,2])/area.mean()
-    h_head_mean = h_head.mean(axis=0)
-
-    d_head_head = []
-    for h in h_head:
-        h_i_l = h[z<z.max()/2]
-        h_i_r = h[z>z.max()/2]
-        z_l = z[np.abs(h_i_l-h_i_l.max()).argmin()]
-        z_r = z[np.abs(h_i_r-h_i_r.max()).argmin()+int(z.size/2)]
-        d_head_head.append(z_r-z_l)
-
-    if not cooke_model:
-        # density profile: negatively charged second head
-        t_pho = traj.atom_slice(traj.top.select('name X'))
-        h_pho = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_pho.xyz[:,:,2])/area.mean()
-        h_pho_mean = h_pho.mean(axis=0)
-
-        d_pho_pho = []
-        for h in h_pho:
-            h_i_l = h[z<z.max()/2]
-            h_i_r = h[z>z.max()/2]
-            z_l = z[np.abs(h_i_l-h_i_l.max()).argmin()]
-            z_r = z[np.abs(h_i_r-h_i_r.max()).argmin()+int(z.size/2)]
-            d_pho_pho.append(z_r-z_l)
-        np.save(output_prefix+'_pho_profiles.npy',np.c_[z,h_pho_mean])
-        np.save(output_prefix+'_thickness_pho.npy',np.c_[time,d_pho_pho])
-
-    # density profile: protein
-    protein_selection = traj.top.select('all and not (name Z or name B or name O or name X)')
-    if protein_selection.size > 0:
-        t_prot = traj.atom_slice(protein_selection)
-        h_prot_mean = np.histogram(t_prot.xyz[:,:,2].flatten(),bins=edges/10)[0]/traj.n_frames/area.mean()
-        np.save(output_prefix+'_profiles.npy',np.c_[z,h_head_mean,h_tail_mean,h_prot_mean])
-    else:
-        np.save(output_prefix+'_profiles.npy',np.c_[z,h_head_mean,h_tail_mean])
-
-    # calculate order parameter
-    if cooke_model:
-        last_tail = traj.top.select('name Z')[1::2]
-    else:
-        last_tail = traj.top.select('name Z')[2::3]
-
-    head = traj.top.select('name O or name B')
-
-    dvec = md.compute_displacements(traj, np.c_[head,last_tail])
-
-    cos = dvec[:,:,2] / np.linalg.norm(dvec,axis=2)
-    p2 = 0.5*(3*cos**2-1)
-    order_param = p2.mean(axis=1)
-
-    np.save(output_prefix+'_area.npy',np.c_[time,area_per_lipid])
-    np.save(output_prefix+'_thickness_head.npy',np.c_[time,d_head_head])
-    np.save(output_prefix+'_order.npy',np.c_[time,order_param])
-
-def calc_tmd_prop(path,output_prefix,saving_interval,nskip,tmd):
-    """
-    path: path where trajectory and pdb are saved
-    output_prefix: prefix for output files
-    saving_interval: time interval between consecutive frames
-    nskip: number of frames to skip to reach equilibrium
-    tmd: string to select the transmembrane domain
-    """
-    aa_one_to_three = {'R': 'ARG', 'D': 'ASP', 'N': 'ASN', 'E': 'GLU', 'K': 'LYS', 'H': 'HIS',
-        'Q': 'GLN', 'S': 'SER', 'C': 'CYS', 'G': 'GLY', 'T': 'THR', 'A': 'ALA', 'F': 'PHE',
-        'M': 'MET', 'Y': 'TYR', 'V': 'VAL', 'W': 'TRP', 'L': 'LEU', 'I': 'ILE', 'P': 'PRO'}
-
-    # center trajectory based on tail beads
-    h, z = center_slab(path,path=path,ref_atoms='name Z')
-    # load centered trajectory
-    traj = md.load_dcd(path+'/traj.dcd',top=path+'/top.pdb')[nskip:]
-    traj = traj.atom_slice(traj.top.select('all and not (name Z or name B or name O or name X)'))
-
-    # distance between protein residues and bilayer midplace
-    mean_dz = np.abs(traj.xyz[:,:,2]-traj.unitcell_lengths[0,2]/2.).mean(axis=0)
-    std_dz = np.abs(traj.xyz[:,:,2]-traj.unitcell_lengths[0,2]/2.).std(axis=0)
-    np.save(output_prefix+'_distance_midplane.npy',np.c_[np.arange(traj.n_atoms)+1,mean_dz,std_dz])
-
-    # simulation time
-    time = np.arange(traj.n_frames)*saving_interval
-
-    # angle between tmd principal axis and bilayer normal
-    selection = traj.top.select(tmd)
-    tmd_angle = calc_angles(traj,selection)
-    np.save(output_prefix+'_tmd_angles.npy',np.c_[time,tmd_angle])
-
-    top = md.Topology()
-    resnum = 1
-    for chainid in range(traj.n_chains):
-        chain = top.add_chain()
-        atom_slice = traj.atom_slice(traj.top.select(f'chainid {chainid:d}'))
-        for residue in atom_slice.top.residues:
-            res = top.add_residue(aa_one_to_three[residue.name], chain, resSeq=resnum)
-            resnum += 1
-            for atom in residue.atoms:
-                top.add_atom('CA', element=md.element.carbon, residue=res)
-    for i in range(traj.n_atoms-1):
-        top.add_bond(top.atom(i),top.atom(i+1))
-    traj = md.Trajectory(xyz=traj.xyz, topology=top, time=np.arange(traj.n_frames),
-        unitcell_lengths=traj.unitcell_lengths, unitcell_angles=traj.unitcell_angles)
-
-    traj.save_dcd(path+'/prot_CG.dcd')
-    traj[0].save_pdb(path+'/prot_CG.pdb')
-
-    u = MDAnalysis.Universe(path+'/prot_CG.pdb',path+'/prot_CG.dcd',in_memory=True)
-    ag = u.select_atoms('all')
-    bonds = []
-    for i in range(ag.n_atoms-1):
-        bonds.extend([(i, i+1)])
-    u.add_TopologyAttr('bonds', bonds)
-    with MDAnalysis.Writer(path+'/prot_CG.dcd',ag.n_atoms) as W:
-        for t,ts in enumerate(u.trajectory):
-            ts = transformations.unwrap(ag)(ts)
-            W.write(ag)
-
-
+    np.save(output_folder+f'/{name:s}_profiles.npy',all_profiles)

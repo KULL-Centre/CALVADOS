@@ -16,7 +16,7 @@ sysname = f'{args.name:s}'
 L = 20
 
 # set the saving interval (number of integration steps)
-N_save = 100
+N_save = 1000
 
 # set final number of frames to save
 N_frames = 1000
@@ -25,9 +25,9 @@ config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
-  temp = 293.15, # 20 degrees Celsius
+  temp = 293, # K
   ionic = 0.15, # molar
-  pH = 7.5, # 7.5
+  pH = 7.0, # 7.5
   topol = 'center',
 
   # RUNTIME SETTINGS
@@ -38,16 +38,18 @@ config = Config(
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
-
-  # JOB SETTINGS (ignore if running locally)
-  submit = False
 )
 
 # PATH
 path = f'{cwd}/{sysname:s}'
-subprocess.run(f'mkdir -p {path}',shell=True)
+subprocess.run(f'mkdir -p data', shell=True)
 
-config.write(path,name='config.yaml')
+analyses = f"""
+from calvados.analysis import save_rg
+save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
+"""
+
+config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
@@ -57,7 +59,7 @@ components = Components(
   charge_termini = 'both', # charge N or C or both
 
   # INPUT
-  fresidues = f'{cwd}/input/residues.csv', # residue definitions
+  fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
   ffasta = f'{cwd}/input/idr.fasta', # residue definitions
 )
 

@@ -1,71 +1,69 @@
+
 import os
-import pandas as pd
 from calvados.cfg import Config, Job, Components
 import subprocess
 import numpy as np
 from argparse import ArgumentParser
+from Bio import SeqIO
 
 parser = ArgumentParser()
 parser.add_argument('--name',nargs='?',required=True,type=str)
+parser.add_argument('--replica',nargs='?',required=True,type=int)
 args = parser.parse_args()
 
 cwd = os.getcwd()
-sysname = f'{args.name:s}'
+N_save = int(5e4)
 
-# set the side length of the cubic box
-L = 30
-
-# set the saving interval (number of integration steps)
-N_save = 1000
-
-# set final number of frames to save
-N_frames = 1000
+sysname = f'{args.name:s}_{args.replica:d}'
 
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
-  box = [L, L, L], # nm
-  temp = 293, # K
-  ionic = 0.15, # molar
-  pH = 7.0,
-  topol = 'center',
+  box = [20, 20, 270], # nm
+  temp = 293,
+  ionic = 0.1, # molar
+  pH = 7.5,
+  topol = 'slab',
+  friction_coeff = 0.001,
+  slab_width = 40,
 
   # RUNTIME SETTINGS
-  wfreq = N_save, # dcd writing interval, 1 = 10 fs
-  steps = N_frames*N_save, # number of simulation steps
+  wfreq = N_save, # dcd writing frequency, 1 = 10fs
+  steps = 12000*N_save, # number of simulation steps
   runtime = 0, # overwrites 'steps' keyword if > 0
-  platform = 'CPU', # or CUDA
+  platform = 'CUDA', # 'CUDA'
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
+  slab_eq = True,
+  steps_eq = 100*N_save,
 )
 
 # PATH
-path = f'{cwd}/{sysname:s}'
+path = f'{cwd}/{sysname}'
 subprocess.run(f'mkdir -p {path}',shell=True)
+subprocess.run(f'mkdir -p data',shell=True)
 
-config.write(path,name='config.yaml')
+analyses = f"""
+from calvados.analysis import calc_slab_profiles
+calc_slab_profiles("{path:s}","{sysname:s}","data","all",0)
+"""
+
+config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
   molecule_type = 'protein',
   nmol = 1, # number of molecules
   restraint = True, # apply restraints
-  charge_termini = 'both', # charge N or C or both
+  charge_termini = 'both', # charge N or C or both or none
 
   # INPUT
   fresidues = f'{cwd}/input/residues_CALVADOS3.csv', # residue definitions
   fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
   pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
 
-  # RESTRAINTS
-  restraint_type = 'harmonic', # harmonic or go
-  use_com = True, # apply on centers of mass instead of CA
-  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
-  k_harmonic = 700., # Restraint force constant
-
 )
-components.add(name=args.name)
 
+components.add(name=args.name, nmol=100)
 components.write(path,name='components.yaml')
-

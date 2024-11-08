@@ -475,7 +475,7 @@ class Lipid(Component):
         return exclusion_map
 
 class Crowder(Component):
-    """ Component lipid. """
+    """ Component Crowder. """
 
     def __init__(self, name: str, comp_dict: dict, defaults: dict):
         super().__init__(name, comp_dict, defaults)

@@ -36,6 +36,10 @@ class Sim:
         self.box = np.array(self.box)
         self.eps_lj *= 4.184 # kcal to kJ/mol
 
+        if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
+            self.slab_eq = False
+            self.bilayer_eq = False
+
         if self.slab_eq:
             self.rcent = interactions.init_eq_restraints(self.box,self.k_eq)
 
@@ -150,11 +154,11 @@ class Sim:
 
         if self.topol == 'slab': # proteins + rna
             self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas,[self.box[0],self.box[1],2*self.box[0]])
-            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.box[0]])
+            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width])
             if self.ncrowders > 0: # crowder
-                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-2*self.box[0]])
+                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-self.slab_outer])
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
-                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+2*self.box[0]]), axis=0)
+                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.slab_outer]), axis=0)
         elif self.topol == 'grid':
             self.xyzgrid = build.build_xyzgrid(self.nmolecules,self.box)
         if self.nlipids > 0:
@@ -410,7 +414,9 @@ class Sim:
             pdb = app.pdbfile.PDBFile(self.pdb_cg)
 
         # use langevin integrator
-        integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,0.01/unit.picosecond,0.01*unit.picosecond)
+        integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+        if self.random_number_seed != None:
+            integrator.setRandomNumberSeed(self.random_number_seed)
         print(integrator.getFriction(),integrator.getTemperature())
 
         # assemble simulation
@@ -418,8 +424,11 @@ class Sim:
         if self.platform == 'CPU':
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
         else:
+            if os.environ.get('CUDA_VISIBLE_DEVICES') == None:
+                platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
-
+        print('Running on', platform.getName())
+        
         fcheck_in = f'{self.path}/{self.frestart}'
         fcheck_out = f'{self.path}/restart.chk'
         append = False
@@ -452,7 +461,7 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.slab_eq and not os.path.isfile(fcheck_in):
+        if self.slab_eq:
             print(f"Starting equilibration with k_eq == {self.k_eq:.4f} kJ/(mol*nm) for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
@@ -466,7 +475,7 @@ class Sim:
                     print(f'Removing external force {index}')
                     self.system.removeForce(index)
                     break
-            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,0.01/unit.picosecond,0.01*unit.picosecond)
+            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
             if self.platform == 'CPU':
                 simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
             else:
@@ -475,7 +484,7 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.bilayer_eq and not os.path.isfile(fcheck_in):
+        if self.bilayer_eq:
             print(f"Starting equilibration under zero lateral tension for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
@@ -484,6 +493,7 @@ class Sim:
             rep.report(simulation,state_final)
             pdb = app.pdbfile.PDBFile(f'{self.path}/equilibration_final.pdb')
             topology = pdb.getTopology()
+            a, b, c = state_final.getPeriodicBoxVectors()
             topology.setPeriodicBoxVectors(state_final.getPeriodicBoxVectors())
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
@@ -495,19 +505,18 @@ class Sim:
                         break
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,0.01/unit.picosecond,0.01*unit.picosecond)
+            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
             if self.platform == 'CPU':
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
             else:
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform)
             simulation.context.setPositions(state_final.getPositions())
-            print(f'Minimizing energy.')
-            simulation.minimizeEnergy()
+            simulation.context.setPeriodicBoxVectors(a, b, c)
 
         # run simulation
         simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/{self.sysname:s}.dcd',self.wfreq,append=append))
-        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',int(self.wfreq*10),
-                step=True,speed=True,elapsedTime=True,separator='\t',append=append))
+        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',self.logfreq,
+                step=True,speed=True,elapsedTime=True,potentialEnergy=self.report_potential_energy,separator='\t',append=append))
 
         print("STARTING SIMULATION", flush=True)
         if self.runtime > 0: # in hours
@@ -523,10 +532,10 @@ class Sim:
         now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
-        state_final = simulation.context.getState(getPositions=True)
-        rep = app.pdbreporter.PDBReporter(f'{self.sysname}_{dt_string}.pdb',0)
+        state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
+        rep = app.pdbreporter.PDBReporter(f'{self.path}/{self.sysname}_{dt_string}.pdb',0)
         rep.report(simulation,state_final)
-        rep = app.pdbreporter.PDBReporter('checkpoint.pdb',0)
+        rep = app.pdbreporter.PDBReporter(f'{self.path}/checkpoint.pdb',0)
         rep.report(simulation,state_final)
 
 def run(path='.',fconfig='config.yaml',fcomponents='components.yaml'):

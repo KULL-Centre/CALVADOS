@@ -15,16 +15,16 @@ L = 30
 N_save = 1000
 
 # set final number of frames to save
-N_frames = 100000
+N_frames = 1000
 
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
-  temp = 293.15, # 20 degrees Celsius
+  temp = 293, # K
   ionic = 0.15, # molar
-  pH = 7.5, # 7.5
-  topol = 'grid',#'center',
+  pH = 7.0,
+  topol = 'center',
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
@@ -34,9 +34,6 @@ config = Config(
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
-
-  # JOB SETTINGS (ignore if running locally)
-  submit = False
 )
 
 # PATH
@@ -52,6 +49,7 @@ components = Components(
   charge_termini = 'both', # charge N or C or both
   fresidues = f'{cwd}/residues_C2RNA.csv', # residue definitions
   ffasta = f'{cwd}/rna.fasta',
+  nmol = 1,
  
   # RNA settings
   rna_kb1 = 1400.0,
@@ -64,6 +62,6 @@ components = Components(
 
 )
 
-components.add(name='polyR30', molecular_type='rna', nmol=1, restraint=False)
+components.add(name='polyR30')
 components.write(path,name='components.yaml')
 

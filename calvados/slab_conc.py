@@ -25,12 +25,14 @@ from statsmodels.tsa.stattools import acf
 import sys
 
 from calvados import analysis
+import sys
+from pathlib import Path
+PACKAGEDIR = Path(__file__).parent.absolute()
+sys.path.append(f'{str(PACKAGEDIR):s}/BLOCKING')
+from main import BlockAnalysis
 
 def calcProfile(seq,name,T,L,value,error,tmin=1200,tmax=None,fbase='.',
-    plot=False,pairs=False,X=None,blockingpath='/Users/sobuelow/software/BLOCKING',
-    pden=3.,pdil=6.):
-    sys.path.append(blockingpath)
-    from main import BlockAnalysis
+    plot=False,pairs=False,X=None,pden=3.,pdil=6.):
     if not pairs:
         X = name
     h = np.load(f'{fbase}/{name}/{T}/{X}_{T}.npy')
@@ -93,25 +95,22 @@ def calcProfile(seq,name,T,L,value,error,tmin=1200,tmax=None,fbase='.',
     block_den.SEM()
 
     if pairs:
-        value.loc[name,f'{X}_dil'] = cdil # block_dil.av 
-        value.loc[name,f'{X}_den'] = cden # block_den.av 
+        value.loc[name,f'{X}_dil'] = cdil # block_dil.av
+        value.loc[name,f'{X}_den'] = cden # block_den.av
 
         error.loc[name,f'{X}_dil'] = block_dil.sem 
         error.loc[name,f'{X}_den'] = block_den.sem
     else:
-        value.loc[name,'{:d}_dil'.format(T)] = cdil # block_dil.av 
-        value.loc[name,'{:d}_den'.format(T)] = cden # cilblock_den.av 
+        value.loc[name,'{:d}_dil'.format(T)] = cdil # block_dil.av
+        value.loc[name,'{:d}_den'.format(T)] = cden # cilblock_den.av
 
-        error.loc[name,'{:d}_dil'.format(T)] = block_dil.sem 
+        error.loc[name,'{:d}_dil'.format(T)] = block_dil.sem
         error.loc[name,'{:d}_den'.format(T)] = block_den.sem
 
     return(value, error)
 
 def calcProfile_toref(name,T,L,seqX,seqref,value,error,tmin=1200,tmax=None,fbase='.',
-    plot=False,X=None,ref=None,blockingpath='/Users/sobuelow/software/BLOCKING',
-    pden=3.,pdil=6.):
-    sys.path.append(blockingpath)
-    from main import BlockAnalysis
+    plot=False,X=None,ref=None,pden=3.,pdil=6.):
 
     # h = np.load(f'{fbase}/{m}/{T:d}/{X}_{T:d}.npy')
     href = np.load(f'{fbase}/{name}/{T}/{ref}.npy')
@@ -163,7 +162,7 @@ def calcProfile_toref(name,T,L,seqX,seqref,value,error,tmin=1200,tmax=None,fbase
         fig, ax = plt.subplots(1,2,figsize=(8,4))
         ax[0].plot(z,hmref,color='black')
         ax[0].plot(z,hmX,color='C0')
-        
+
         for c1,c2 in zip(cutoffs1,cutoffs2):
             ax[0].axvline(c1,color='gray')
             ax[0].axvline(c2,color='black')
@@ -185,19 +184,17 @@ def calcProfile_toref(name,T,L,seqX,seqref,value,error,tmin=1200,tmax=None,fbase
     block_dil.SEM()
     block_den.SEM()
 
-    value.loc[name,f'{X}_dil'] = cdil # block_dil.av 
-    value.loc[name,f'{X}_den'] = cden #block_den.av 
+    value.loc[name,f'{X}_dil'] = cdil # block_dil.av
+    value.loc[name,f'{X}_den'] = cden #block_den.av
 
-    error.loc[name,f'{X}_dil'] = block_dil.sem 
+    error.loc[name,f'{X}_dil'] = block_dil.sem
     error.loc[name,f'{X}_den'] = block_den.sem
 
     return(value, error)
 
 def calcProfile_simple(name,temp,seq,L,vv,tmin=1200,tmax=None,step=1,fbase='.',
-    plot=False,blockingpath='/Users/sobuelow/software/BLOCKING',
-    pden=3.,pdil=6.,dGmin=-7):
-    sys.path.append(blockingpath)
-    from main import BlockAnalysis
+    plot=False,pden=3.,pdil=6.,dGmin=-7):
+
     h = np.load(f'{fbase}/{name}/{temp}/{name}.npy')
     N = len(seq)
     conv = 100/6.022/N/L/L*1e3
@@ -242,7 +239,7 @@ def calcProfile_simple(name,temp,seq,L,vv,tmin=1200,tmax=None,step=1,fbase='.',
         for c1,c2 in zip(cutoffs1,cutoffs2):
             ax[0].axvline(c1,color='gray')
             ax[0].axvline(c2,color='black')
-        
+
         ax[0].set(xlabel='z [nm]', ylabel='Concentration [mM]')
         ax[0].set(yscale='log')
         ax[0].set(title=name)
