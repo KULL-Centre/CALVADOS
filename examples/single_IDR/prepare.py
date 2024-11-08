@@ -21,6 +21,8 @@ N_save = 1000
 # set final number of frames to save
 N_frames = 1000
 
+residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
+
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
@@ -42,10 +44,13 @@ config = Config(
 
 # PATH
 path = f'{cwd}/{sysname:s}'
-subprocess.run(f'mkdir -p data', shell=True)
+subprocess.run(f'mkdir -p {path}',shell=True)
+subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
+
 from calvados.analysis import save_rg
+
 save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
 """
 
@@ -59,7 +64,7 @@ components = Components(
   charge_termini = 'both', # charge N or C or both
 
   # INPUT
-  fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
+  fresidues = residues_file, # residue definitions
   ffasta = f'{cwd}/input/idr.fasta', # residue definitions
 )
 

@@ -65,7 +65,7 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
   charge_termini = 'both', # charge N or C or both
-    # INPUT
+  # INPUT
   ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
   fresidues = f'{cwd}/input/residues.csv', # residue definitions
   pdb_folder = f'{cwd}/input', # directory for pdb and PAE files

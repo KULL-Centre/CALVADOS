@@ -21,9 +21,7 @@ warnings.filterwarnings('ignore')
 import MDAnalysis as mda
 import MDAnalysis.analysis.msd as msd
 from statsmodels.tsa.stattools import acf
-
 import sys
-
 from calvados import analysis
 import sys
 from pathlib import Path
@@ -98,7 +96,7 @@ def calcProfile(seq,name,T,L,value,error,tmin=1200,tmax=None,fbase='.',
         value.loc[name,f'{X}_dil'] = cdil # block_dil.av
         value.loc[name,f'{X}_den'] = cden # block_den.av
 
-        error.loc[name,f'{X}_dil'] = block_dil.sem 
+        error.loc[name,f'{X}_dil'] = block_dil.sem
         error.loc[name,f'{X}_den'] = block_den.sem
     else:
         value.loc[name,'{:d}_dil'.format(T)] = cdil # block_dil.av
@@ -255,7 +253,7 @@ def calcProfile_simple(name,temp,seq,L,vv,tmin=1200,tmax=None,step=1,fbase='.',
 
     np.save(f'{fbase}/{name}/{temp}/cutoffs_dense.npy',cutoffs1)
     np.save(f'{fbase}/{name}/{temp}/cutoffs_dilute.npy',cutoffs2)
-    
+
     cdil = hm[bool2].mean() # average concentration # CHANGED
     cden = hm[bool1].mean() # CHANGED
 

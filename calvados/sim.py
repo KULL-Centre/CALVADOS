@@ -408,8 +408,12 @@ class Sim:
     def simulate(self):
         """ Simulate. """
 
-        if self.restart == 'pdb':
-            pdb = app.pdbfile.PDBFile(self.frestart)
+        fcheck_in = f'{self.path}/{self.frestart}'
+        fcheck_out = f'{self.path}/restart.chk'
+        append = False
+
+        if self.restart == 'pdb' and os.path.isfile(fcheck_in):
+            pdb = app.pdbfile.PDBFile(fcheck_in)
         else:
             pdb = app.pdbfile.PDBFile(self.pdb_cg)
 
@@ -428,10 +432,6 @@ class Sim:
                 platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
         print('Running on', platform.getName())
-        
-        fcheck_in = f'{self.path}/{self.frestart}'
-        fcheck_out = f'{self.path}/restart.chk'
-        append = False
 
         if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
             if not os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'):

@@ -11,7 +11,7 @@ def genParamsDH(temp,ionic):
     lB = 1.6021766**2/(4*np.pi*8.854188*epsw)*6.02214076*1000/kT
     eps_yu = lB*kT
     # Calculate the inverse of the Debye length
-    k_yu = np.sqrt(8*np.pi*lB*ionic*6.022/10)
+    k_yu = np.sqrt(8*np.pi*lB*ionic*6.02214076/10)
     return eps_yu, k_yu
 
 def init_bonded_interactions():
@@ -30,7 +30,7 @@ def init_ah_interactions(eps,rc,fixed_lambda):
     energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
     #ah = openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/{rc})^12-(0.5*(s1+s2)/{rc})^6')
     ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
-    
+
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
     ah.addPerParticleParameter('id')
@@ -41,7 +41,6 @@ def init_ah_interactions(eps,rc,fixed_lambda):
 
     print('Ashbaugh-Hatch potential between particles with lambda=1 and sigma=0.68 at',rc*unit.nanometer,end=': ')
     print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*unit.kilojoules_per_mole)
-    # print('pbc ah: ', ah.usesPeriodicBoundaryConditions())
     return ah
 
 def init_yu_interactions(eps, k, rc):
@@ -60,12 +59,9 @@ def init_yu_interactions(eps, k, rc):
 
     return yu
 
-    # print('pbc yu: ', yu.usesPeriodicBoundaryConditions())
-
 def init_nonbonded_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
     """ Define protein interaction expressions (without restraints). """
 
-    # hb = init_bonded_interactions()
     ah = init_ah_interactions(eps_lj, cutoff_lj, fixed_lambda)
     yu = init_yu_interactions(eps_yu, k_yu, cutoff_yu)
 
@@ -189,7 +185,7 @@ def init_wcafene_interactions(eps):
 
 def init_cosine_interactions(eps):
     """ Define cosine interaction (Cooke and Deserno lipid model, DOI: https://doi.org/10.1063/1.2135785). """
-    
+
     cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'   
     cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
     cosine.addPerParticleParameter('s')
