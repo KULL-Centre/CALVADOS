@@ -23,7 +23,7 @@ conda activate calvados
 ```
 (2. Only needed when planning to use GPUs: Install openmm via conda-force with cudatoolkit. This step can be skipped if running on CPU only.)
 ```
-conda install -c conda-forge cudatoolkit=11.2
+conda install -c conda-forge openmm=8.2.0 cudatoolkit=11.2
 ```
 3. Clone package and install CALVADOS and its dependencies using pip
 ``` 
