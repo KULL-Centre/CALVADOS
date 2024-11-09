@@ -22,10 +22,10 @@ DHSP = lambda r,yukawa_eps,lD,rc : np.where(r<rc, DH(r,yukawa_eps,lD)-DH(rc,yuka
     ("resname1", "resname2"),
     [
         ("Y", "W"),
+        ("R", "W"),
         ("E", "D"),
         ("E", "W"),
         ("E", "R"),
-        ("R", "W"),
     ],
 )
 

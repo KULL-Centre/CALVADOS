@@ -21,11 +21,7 @@ Please cite the following references when using the software:
 conda create -n calvados python=3.10
 conda activate calvados
 ```
-2. Install scipy, numba and openmm with conda
-```
-conda install -c conda-forge scipy=1.13 numba=0.60 openmm=8.2.0
-```
-(2.b Install cudatoolkit when running on GPUs)
+(2. Only needed when planning to use GPUs: Install openmm via conda-force with cudatoolkit. This step can be skipped if running on CPU only.)
 ```
 conda install -c conda-forge cudatoolkit=11.2
 ```
