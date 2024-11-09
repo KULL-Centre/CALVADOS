@@ -23,7 +23,7 @@ conda activate calvados
 ```
 2. Install scipy, numba and openmm with conda
 ```
-conda install -c conda-forge scipy=1.13 numba=0.60 openmm=8.1.2
+conda install -c conda-forge scipy=1.13 numba=0.60 openmm=8.2.0
 ```
 (2.b Install cudatoolkit when running on GPUs)
 ```
