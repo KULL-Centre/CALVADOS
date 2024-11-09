@@ -25,7 +25,6 @@ setup(
     install_requires=[
         'numpy==1.24',
         'pandas==2.1.1',
-        'OpenMM==8.1.2',
         'MDAnalysis==2.6.1',
         'biopython==1.81',
         'Jinja2==3.1.2',
