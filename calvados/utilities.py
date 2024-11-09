@@ -1,7 +1,4 @@
-import pandas as pd
-import MDAnalysis as mda
-from Bio import SeqIO, SeqUtils
-import yaml
+import numpy as np
 
 def xconv(x,N=5):
     xf = np.convolve(x, np.ones(N)/N, mode='same')

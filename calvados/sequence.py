@@ -261,68 +261,6 @@ def split_seq(seq):
     seqneu = shuffle_str(seqneu)
     return seqpos, seqneg, seqneu
 
-def mc_towards_kappa(seq,k_target=0.2,nsteps=100,dip_target=0.,a_kappa=1.,a_dip=1.,nswaps=1,
-                    dipmax=0.):
-    seq = "".join(seq)
-    # clump charges
-    k0 = calc_kappa(seq)
-    print('-----------')
-    if k_target >= 0.3:
-        print('Calculating deltamax')
-        seq = construct_deltamax(seq)
-    else:
-        print('Start from original seq')
-    # print(seq)
-    k0 = calc_kappa(seq)
-    print('k before optimizing: ',f'{k0:.2f}')
-    u0_k = k_energy(k0,k_target,a_kappa=a_kappa)
-    u0_dip = dip_energy(seq,dip_target,a_dip=a_dip,dipmax=dipmax)
-    u0 = u0_k + u0_dip
-    # print(u0_k, u0_dip)
-    # MC
-    # print('-----------')
-    print('RUNNING MC')
-    # print(u0, seq)
-    nacc = 0.
-    nrej = 0.
-    us = np.zeros((nsteps))
-    ks = np.zeros((nsteps))
-    dips = np.zeros((nsteps))
-    umin = 10000.
-    for idx in tqdm(range(nsteps)):
-        seqtemp = seq
-        cswp = False
-        for i in range(nswaps):
-            seqtemp, charge_swap = trial_move(seqtemp)
-            if charge_swap:
-                cswp = True
-        if cswp:
-            k1 = calc_kappa(seqtemp)
-            u1_k = k_energy(k1,k_target,a_kappa=a_kappa)
-            u1_dip = dip_energy(seqtemp,dip_target,a_dip=a_dip,dipmax=dipmax)
-            # print(u1_k, u1_dip)
-            u1 = u1_k + u1_dip
-            accept = metropolis(u0,u1,a=10*len(seq))
-        else: # k should be identical for neutral swaps
-            k1 = k0
-            u1 = u0
-            accept = True
-        if accept:
-            nacc += 1
-            seq = seqtemp
-            k0 = k1
-            u0 = u1
-        else:
-            nrej += 1
-        ks[idx] = k0
-        us[idx] = u0
-        com, dip = seq_dipole(seq)
-        dips[idx] = dip
-        if u0 < umin:
-            umin = u0
-            seqmin = seq
-    return seqmin, nacc/(nacc+nrej), us, ks, dips
-
 def single_swap(seq):
     seq = list(seq)
     N = len(seq)
