@@ -3,7 +3,7 @@ sysname : 'default_simulation'
 topol : 'center'
 
 fixed_lambda: 0
-eps_lj : 0.2 # kcal
+eps_lj : 0.2
 cutoff_lj : 2.0
 cutoff_yu : 4.0
 
@@ -22,7 +22,7 @@ zero_lateral_tension : false
 k_eq : 0.02
 steps_eq : 1000
 
-friction_coeff: 0.01 # ps-1
+friction_coeff: 0.01 
 slab_width : 30
 slab_outer : 40
 random_number_seed : null

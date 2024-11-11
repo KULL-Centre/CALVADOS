@@ -46,7 +46,7 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 from calvados.analysis import calc_slab_profiles
-calc_slab_profiles("{path:s}","{sysname:s}","data","all",0)
+calc_slab_profiles(path="{path:s}",name="{sysname:s}",output_folder="data",ref_atoms="all",start=0)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
