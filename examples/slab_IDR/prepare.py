@@ -25,10 +25,6 @@ config = Config(
   topol = 'slab',
   friction_coeff = 0.001,
 
-  # INPUT
-  ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
-  fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
-
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing frequency, 1 = 10fs
   steps = 12000*N_save, # number of simulation steps
@@ -61,6 +57,10 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
   charge_termini = 'both', # charge N or C or both or none
+  
+  # INPUT
+  ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
+  fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
 )
 
 components.add(name=args.name, nmol=100)
