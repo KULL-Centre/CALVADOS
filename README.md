@@ -2,6 +2,7 @@
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KULL-Centre/_2023_Tesei_IDRome/blob/main/IDRLab.ipynb)
 [![CALVADOS Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/r-eFzoBiQZ4)
 [![IDRome Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/kL3-cusHgzM)
+[![Python application](https://github.com/KULL-Centre/CALVADOS/actions/workflows/python-app.yml/badge.svg)](https://github.com/KULL-Centre/CALVADOS/actions/workflows/python-app.yml)
 
 # CALVADOS
 
@@ -21,13 +22,9 @@ Please cite the following references when using the software:
 conda create -n calvados python=3.10
 conda activate calvados
 ```
-2. Install scipy, numba and openmm with conda
+(2. Only needed when planning to use GPUs: Install openmm via conda-force with cudatoolkit. This step can be skipped if running on CPU only.)
 ```
-conda install -c conda-forge scipy=1.13 numba=0.60 openmm=8.1.2
-```
-(2.b Install cudatoolkit when running on GPUs)
-```
-conda install -c conda-forge cudatoolkit=11.2
+conda install -c conda-forge openmm=8.2.0 cudatoolkit=11.2
 ```
 3. Clone package and install CALVADOS and its dependencies using pip
 ``` 
