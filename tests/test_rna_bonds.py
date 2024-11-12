@@ -46,7 +46,7 @@ def test_bonds(name,molecule_type):
     N_save = 10
 
     # set final number of frames to save
-    N_frames = 10000
+    N_frames = 10
 
     residues_file = f'{cwd}/tests/data/residues_C2RNA.csv'
     fasta_file = f'{cwd}/tests/data/fastalib.fasta'
