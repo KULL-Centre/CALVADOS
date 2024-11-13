@@ -2,8 +2,6 @@ from .sequence import seq_from_pdb, read_fasta, get_qs, patch_terminal_qs
 from .analysis import self_distances
 from calvados import build, interactions
 
-from pandas.core.frame import DataFrame
-from importlib import resources
 from pandas import read_csv
 
 from openmm import unit
@@ -59,7 +57,7 @@ class Component:
     def calc_dmap(self):
         self.dmap = self_distances(self.xinit)
 
-    def calc_x_linear(self, d: float = 0.38, spiral: bool = False, 
+    def calc_x_linear(self, d: float = 0.38, spiral: bool = False,
             n_per_res: int = 1, ys = None):
         if spiral:
             self.xinit = build.build_spiral(self.bondlengths, arc=d, n_per_res=n_per_res)
@@ -86,7 +84,7 @@ class Component:
                 if self.bond_check(i,j):
                     d = self.calc_bondlength(i, j)
                     bidx = self.hb.addBond(
-                        i+offset, j+offset, d*unit.nanometer, 
+                        i+offset, j+offset, d*unit.nanometer,
                         self.kb*unit.kilojoules_per_mole/(unit.nanometer**2))
                     self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,self.kb]) # 1-based
                     exclusion_map.append([i+offset,j+offset])
@@ -137,7 +135,7 @@ class Protein(Component):
         pae_sigm_factor = -self.pae_width*(pae-self.pae_shift)
         pae_sigm = np.exp(pae_sigm_factor) / (np.exp(pae_sigm_factor) + 1)
         # pae_inv = build.load_pae_inv(input_pae,colabfold=self.colabfold)
-        scaled_LJYU_pairlist = []
+        # scaled_LJYU_pairlist = []
         self.scale = bfac_sigm * pae_sigm # restraint scale
         self.bondscale = np.maximum(0, 1. - 5.* self.scale) # residual interactions for low restraints
 
@@ -192,7 +190,7 @@ class Protein(Component):
                 if self.bond_check(i,j):
                     d = self.calc_bondlength(i, j)
                     bidx = self.hb.addBond(
-                        i+offset, j+offset, d*unit.nanometer, 
+                        i+offset, j+offset, d*unit.nanometer,
                         self.kb*unit.kilojoules_per_mole/(unit.nanometer**2))
                     self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,self.kb]) # 1-based
                     exclusion_map.append([i+offset,j+offset])
@@ -346,7 +344,6 @@ class RNA(Component):
             self.xinit = build.build_spiral(self.bondlengths[1::2], arc=d, n_per_res=n_per_res)
         else:
             z_bondlengths = self.bondlengths[::2]
-            y_bondlengths = self.bondlengths[1::2]
             self.xinit = build.build_linear(z_bondlengths, n_per_res=n_per_res, ys=self.bondlengths)
 
     def add_bonds(self, offset):
@@ -360,7 +357,7 @@ class RNA(Component):
                     else:
                         rna_kb = self.rna_kb2
                     bidx = self.hb.addBond(
-                        i+offset, j+offset, d*unit.nanometer, 
+                        i+offset, j+offset, d*unit.nanometer,
                         rna_kb*unit.kilojoules_per_mole/(unit.nanometer**2))
                     exclusion_map.append([i+offset,j+offset])
                     self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,rna_kb])
@@ -369,7 +366,7 @@ class RNA(Component):
                     lam = (self.lambdas[i] + self.lambdas[j]) / 2.
                     n = self.rna_nb_scale
                     bidx = self.scLJ_rna.addBond(
-                        i+offset,j+offset, 
+                        i+offset,j+offset,
                         [sig*unit.nanometer, lam*unit.dimensionless, n*unit.dimensionless])
                     self.basebase_pairlist.append(
                         [i+offset+1,j+offset+1,bidx,sig,lam,n]
@@ -399,7 +396,7 @@ class RNA(Component):
             f.write('i\tj\tb_idx\td[nm]\tk[kJ/mol/nm^2]\n')
             for b in self.bond_pairlist:
                 f.write(f'{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n')
-    
+
         with open(f'{path}/basebase_{self.name}.txt','w') as f:
             f.write('i\tj\tb_idx\tsig\tlam\tn\n')
             for b in self.basebase_pairlist:
@@ -450,27 +447,27 @@ class Lipid(Component):
                         if self.molecule_type == 'cooke_lipid':
                             kfene = 30*3*self.eps_lj/d/d
                             bidx = self.wcafene.addBond(
-                                i+offset, j+offset, 
+                                i+offset, j+offset,
                                 [d*unit.nanometer, kfene*unit.kilojoules_per_mole/(unit.nanometer**2)])
                             self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,kfene]) # 1-based
-                        elif comp.molecule_type == 'lipid':
+                        elif self.molecule_type == 'lipid':
                             bidx = self.hb.addBond(
-                                i+offset, j+offset, d*unit.nanometer, 
+                                i+offset, j+offset, d*unit.nanometer,
                                 1700*unit.kilojoules_per_mole/(unit.nanometer**2))
                             self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,1700]) # 1-based
                         exclusion_map.append([i+offset,j+offset])
                     else:
-                        if comp.molecule_type == 'cooke_lipid':
+                        if self.molecule_type == 'cooke_lipid':
                             kbend = 30*self.eps_lj/d/d
                             bidx = self.hb.addBond(
-                                i+offset, j+offset, 
+                                i+offset, j+offset,
                                 4*d*unit.nanometer, kbend*unit.kilojoules_per_mole/(unit.nanometer**2))
                             self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,4*d,kbend]) # 1-based
                         else:
                             angle = 2/3*np.pi if i == 0 else np.pi
                             k_angle = 7/2 if i == 0 else 7
                             self.ha.addAngle(
-                                i+offset, i+offset+1, j+offset, 
+                                i+offset, i+offset+1, j+offset,
                                 angle*unit.radian, k_angle*unit.kilojoules_per_mole/(unit.radian**2))
         return exclusion_map
 

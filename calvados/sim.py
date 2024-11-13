@@ -14,7 +14,6 @@ from calvados import build, interactions
 from yaml import safe_load
 
 from .components import *
-from .build import check_ssdomain
 
 class Sim:
     def __init__(self,path,config,components):
@@ -65,7 +64,7 @@ class Sim:
             else:
                 # Generic component
                 comp = Component(name, properties, self.comp_defaults)
-            
+
             comp.eps_lj = self.eps_lj
             comp.calc_properties(pH=self.pH, verbose=self.verbose, spiral=spiral)
             if comp.restraint:
@@ -153,8 +152,8 @@ class Sim:
         self.pos = []
 
         if self.topol == 'slab': # proteins + rna
-            self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas,[self.box[0],self.box[1],2*self.box[0]])
-            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width])
+            self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas,[self.box[0],self.box[1],self.slab_width])
+            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width/2.])
             if self.ncrowders > 0: # crowder
                 xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-self.slab_outer])
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
@@ -377,10 +376,10 @@ class Sim:
 
     def add_mdtraj_topol(self, comp):
         """ Add one molecule to mdtraj topology. """
-        
+
         # Note: Move this to component eventually.
         chain = self.top.add_chain()
-        
+
         if comp.molecule_type == 'rna':
             for idx,resname in enumerate(comp.seq):
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
@@ -419,7 +418,7 @@ class Sim:
 
         # use langevin integrator
         integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
-        if self.random_number_seed != None:
+        if self.random_number_seed is not None:
             integrator.setRandomNumberSeed(self.random_number_seed)
         print(integrator.getFriction(),integrator.getTemperature())
 
@@ -428,7 +427,7 @@ class Sim:
         if self.platform == 'CPU':
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
         else:
-            if os.environ.get('CUDA_VISIBLE_DEVICES') == None:
+            if os.environ.get('CUDA_VISIBLE_DEVICES') is None:
                 platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
         print('Running on', platform.getName())
@@ -446,7 +445,7 @@ class Sim:
                 print(f'Reading in system configuration {self.frestart}')
             elif self.restart == 'checkpoint':
                 print(f'No checkpoint file {self.frestart} found: Starting from new system configuration')
-            elif self.restart == None:
+            elif self.restart is None:
                 print('Starting from new system configuration')
             else:
                 raise

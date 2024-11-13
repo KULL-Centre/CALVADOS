@@ -186,8 +186,8 @@ def init_wcafene_interactions(eps):
 def init_cosine_interactions(eps):
     """ Define cosine interaction (Cooke and Deserno lipid model, DOI: https://doi.org/10.1063/1.2135785). """
 
-    cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'   
-    cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
+    cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
+    cosine = openmm.CustomNonbondedForce(cosine_expression+'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
     cosine.addPerParticleParameter('s')
     cosine.addPerParticleParameter('l')
     cosine.addPerParticleParameter('id')
@@ -208,5 +208,4 @@ def init_charge_nonpolar_interactions(eps,rc):
     cn.setCutoffDistance(rc*unit.nanometer)
     cn.setForceGroup(1)
     return cn
-
 
