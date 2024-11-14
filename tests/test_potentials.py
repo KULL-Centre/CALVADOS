@@ -62,10 +62,6 @@ def test_ah_dh_potentials(resname1,resname2):
     pH = 7.0,
     topol = 'grid',
 
-    # INPUT
-    fresidues = residues_file, # residue definitions
-    ffasta = fasta_file, # domain definitions (harmonic restraints)
-
     # RUNTIME SETTINGS
     wfreq = N_save, # dcd writing interval, 1 = 10 fs
     logfreq = N_save, # log file writing interval, 1 = 10 fs
@@ -75,9 +71,6 @@ def test_ah_dh_potentials(resname1,resname2):
     verbose = False,
     report_potential_energy = True,
     random_number_seed = 12345,
-
-    # JOB SETTINGS (ignore if running locally)
-    submit = False
     )
 
     # PATH
@@ -91,8 +84,8 @@ def test_ah_dh_potentials(resname1,resname2):
     # Defaults
     molecule_type = 'protein',
     nmol = 1, # number of molecules
-    restraint = True, # apply restraints
-    charge_termini = 'both', # options: 'N', 'C', 'both' or 'none'
+    fresidues = residues_file, # residue definitions
+    ffasta = fasta_file, # domain definitions (harmonic restraints)
     )
     components.add(name=resname1, restraint=False, charge_termini='none')
     components.add(name=resname2, restraint=False, charge_termini='none')

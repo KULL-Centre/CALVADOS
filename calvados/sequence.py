@@ -115,6 +115,8 @@ def get_qs(seq,flexhis=False,pH=7,calvados_version=2,residues=[]):
                 qs.append(-1.*qcoeff)
             elif s == 'H':
                 qs.append(qhis)
+            elif s == 'p':
+                qs.append(-1.*qcoeff) #p bead
             else:
                 qs.append(0.)
     qs = np.asarray(qs).astype(float)

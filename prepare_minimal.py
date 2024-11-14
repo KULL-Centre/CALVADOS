@@ -12,8 +12,6 @@ config = Config(
   ionic = 0.15, # molar
   pH = 7.0,
 
-  # INPUT
-  ffasta = f'{cwd}/test.fasta', # input fasta file
 
   # RUNTIME SETTINGS
   wfreq = 1000, # dcd writing frequency, 1 = 10fs
@@ -26,7 +24,11 @@ subprocess.run(f'mkdir -p {path}',shell=True)
 
 config.write(path,name='config.yaml')
 
-components = Components()
+components = Components(
+    # INPUT
+  ffasta = f'{cwd}/test.fasta', # input fasta file
+  fresidues = f'{cwd}/residues.csv', # residue definitions
+)
 components.add(name='A1', nmol=1, restraint=False, charge_termini='both')
 components.write(path,name='components.yaml')
 

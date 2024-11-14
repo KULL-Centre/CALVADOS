@@ -55,5 +55,7 @@ For further questions and inquiries, please contact us.
 
 [Fan Cao (@fancaoErik)](https://github.com/fancaoErik)
 
+[Ikki Yasuda (@iyasuda)](https://github.com/iyasuda)
+
 [Kresten Lindorff-Larsen (@lindorff-larsen)](https://github.com/lindorff-larsen)
 

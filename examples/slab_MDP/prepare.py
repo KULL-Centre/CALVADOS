@@ -1,3 +1,4 @@
+
 import os
 from calvados.cfg import Config, Job, Components
 import subprocess
@@ -26,11 +27,6 @@ config = Config(
   friction_coeff = 0.001,
   slab_width = 40,
 
-  # INPUT
-  fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
-  fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
-  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
-
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing frequency, 1 = 10fs
   steps = 12000*N_save, # number of simulation steps
@@ -49,7 +45,6 @@ subprocess.run(f'mkdir -p {path}',shell=True)
 subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
-
 from calvados.analysis import calc_slab_profiles
 
 calc_slab_profiles(path="{path:s}",name="{sysname:s}",output_folder="data",ref_atoms="all",start=0)
@@ -63,9 +58,13 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = True, # apply restraints
   charge_termini = 'both', # charge N or C or both or none
+
+  # INPUT
+  fresidues = f'{cwd}/input/residues_CALVADOS3.csv', # residue definitions
+  fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
+  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
+
 )
 
-components.add(name=args.name, nmol=100, restraint=True)
-
+components.add(name=args.name, nmol=100)
 components.write(path,name='components.yaml')
-

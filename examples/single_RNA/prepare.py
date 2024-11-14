@@ -5,12 +5,8 @@ import subprocess
 import numpy as np
 from argparse import ArgumentParser
 
-parser = ArgumentParser()
-parser.add_argument('--name',nargs='?',required=True,type=str)
-args = parser.parse_args()
-
 cwd = os.getcwd()
-sysname = f'{args.name:s}'
+sysname = 'polyR30'
 
 # set the side length of the cubic box
 L = 30
@@ -20,8 +16,6 @@ N_save = 1000
 
 # set final number of frames to save
 N_frames = 1000
-
-residues_file = f'{cwd}/input/residues_CALVADOS3.csv'
 
 config = Config(
   # GENERAL
@@ -43,38 +37,31 @@ config = Config(
 )
 
 # PATH
-path = f'{cwd}/{sysname:s}'
+path = f'{cwd}/{sysname}'
 subprocess.run(f'mkdir -p {path}',shell=True)
-subprocess.run(f'mkdir -p data',shell=True)
-
-analyses = f"""
-
-from calvados.analysis import save_rg
-
-save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
-"""
 
 config.write(path,name='config.yaml')
 
 components = Components(
   # Defaults
-  molecule_type = 'protein',
-  nmol = 1, # number of molecules
-  restraint = True, # apply restraints
+  molecule_type = 'rna',
+  restraint = False, # apply restraints
   charge_termini = 'both', # charge N or C or both
+  fresidues = f'{cwd}/residues_C2RNA.csv', # residue definitions
+  ffasta = f'{cwd}/rna.fasta',
+  nmol = 1,
+ 
+  # RNA settings
+  rna_kb1 = 1400.0,
+  rna_kb2 = 2200.0,
+  rna_ka = 4.20,
+  rna_pa = 3.14,
+  rna_nb_sigma = 0.4,
+  rna_nb_scale = 15,
+  rna_nb_cutoff = 2.0
 
-  # INPUT
-  fresidues = residues_file, # residue definitions
-  fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
-  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
-
-  # RESTRAINTS
-  restraint_type = 'harmonic', # harmonic or go
-  use_com = True, # apply on centers of mass instead of CA
-  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
-  k_harmonic = 700., # Restraint force constant
 )
-components.add(name=args.name)
 
+components.add(name='polyR30')
 components.write(path,name='components.yaml')
 

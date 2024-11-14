@@ -59,23 +59,30 @@ def init_yu_interactions(eps, k, rc):
 
     return yu
 
-def init_protein_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
+def init_nonbonded_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
     """ Define protein interaction expressions (without restraints). """
 
-    hb = init_bonded_interactions()
     ah = init_ah_interactions(eps_lj, cutoff_lj, fixed_lambda)
     yu = init_yu_interactions(eps_yu, k_yu, cutoff_yu)
 
-    return hb, ah, yu
+    return ah, yu
 
-def init_cooke_lipid_interactions(eps_lj,eps_yu,cutoff_yu):
+def init_angles():
+    ha = openmm.HarmonicAngleForce()
+    ha.setUsesPeriodicBoundaryConditions(True)
+    return ha
+
+def init_lipid_interactions(eps_lj, eps_yu, cutoff_yu, factor=1.9):
     """ Define lipid interaction expressions. """
 
-    wcafene = init_wcafene_interactions(3*eps_lj)
-    cos = init_cosine_interactions(3*eps_lj)
+    # harmonic angles
+    cos = init_cosine_interactions(factor*eps_lj)
     cn = init_charge_nonpolar_interactions(eps_yu, cutoff_yu)
+    return cos, cn
 
-    return wcafene, cos, cn
+def init_wcafene(eps_lj):
+    wcafene = init_wcafene_interactions(3*eps_lj)
+    return wcafene
 
 def init_restraints(restraint_type):
     """ Initialize restraints. """
@@ -107,7 +114,7 @@ def init_scaled_YU(eps_yu,k_yu):
     """ Initialize restraints. """
 
     shift = np.exp(-k_yu*4.0)/4.0
-    scYU = openmm.CustomBondForce('n*q*{eps_yu}*(exp(-{k_yu}*r)/r-{shift})')
+    scYU = openmm.CustomBondForce(f'n*q*{eps_yu}*(exp(-{k_yu}*r)/r-{shift})')
     scYU.addPerBondParameter('q')
     scYU.addPerBondParameter('n')
     scYU.setUsesPeriodicBoundaryConditions(True)
@@ -180,7 +187,7 @@ def init_cosine_interactions(eps):
     """ Define cosine interaction (Cooke and Deserno lipid model, DOI: https://doi.org/10.1063/1.2135785). """
 
     cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
-    cosine = openmm.CustomNonbondedForce(cosine_expression+f'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
+    cosine = openmm.CustomNonbondedForce(cosine_expression+'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
     cosine.addPerParticleParameter('s')
     cosine.addPerParticleParameter('l')
     cosine.addPerParticleParameter('id')
@@ -201,3 +208,4 @@ def init_charge_nonpolar_interactions(eps,rc):
     cn.setCutoffDistance(rc*unit.nanometer)
     cn.setForceGroup(1)
     return cn
+
