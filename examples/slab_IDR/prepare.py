@@ -23,7 +23,6 @@ config = Config(
   ionic = 0.1, # molar
   pH = 7.5,
   topol = 'slab',
-  friction_coeff = 0.001,
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing frequency, 1 = 10fs

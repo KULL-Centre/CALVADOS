@@ -40,7 +40,7 @@ class Component:
             self.n_termini = [0]
             self.c_termini = [len(self.seq)-1]
 
-    def calc_properties(self, pH: float = 7.0, verbose: bool = False, spiral: bool = True):
+    def calc_properties(self, pH: float = 7.0, verbose: bool = False):
         """ Calculate component properties (sigmas, lambdas, qs etc.) """
 
         self.calc_comp_seq()
@@ -57,10 +57,12 @@ class Component:
     def calc_dmap(self):
         self.dmap = self_distances(self.xinit)
 
-    def calc_x_linear(self, d: float = 0.38, spiral: bool = False,
+    def calc_x_setup(self, d: float = 0.38, comp_setup: str = 'spiral',
             n_per_res: int = 1, ys = None):
-        if spiral:
+        if comp_setup == 'spiral':
             self.xinit = build.build_spiral(self.bondlengths, arc=d, n_per_res=n_per_res)
+        elif comp_setup == 'compact':
+            self.xinit = build.build_compact(self.nbeads, d=d)
         else:
             self.xinit = build.build_linear(self.bondlengths, n_per_res=n_per_res, ys=ys)
 
@@ -139,10 +141,10 @@ class Protein(Component):
         self.scale = bfac_sigm * pae_sigm # restraint scale
         self.bondscale = np.maximum(0, 1. - 5.* self.scale) # residual interactions for low restraints
 
-    def calc_properties(self, pH: float = 7.0, verbose: bool = False, spiral: bool = True):
+    def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
 
-        super().calc_properties(pH=pH, verbose=verbose, spiral=spiral)
+        super().calc_properties(pH=pH, verbose=verbose)
         # fix mass of termini
         self.mws[self.n_termini] += 2
         self.mws[self.c_termini] += 16
@@ -160,7 +162,7 @@ class Protein(Component):
             elif self.restraint_type == 'go':
                 self.calc_go_scale()
         else:
-            self.calc_x_linear(spiral=spiral)
+            self.calc_x_setup(comp_setup = comp_setup)
 
     def calc_bondlength(self, i, j):
         d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
@@ -271,7 +273,7 @@ class RNA(Component):
     def __init__(self, name: str, comp_dict: dict, defaults: dict):
         super().__init__(name, comp_dict, defaults)
 
-    def calc_properties(self, pH: float = 7.0, verbose: bool = False, spiral: bool = True):
+    def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Calculate component properties (sigmas, lambdas, qs etc.) """
 
         self.calc_comp_seq() # --> seq and seq2
@@ -285,7 +287,7 @@ class RNA(Component):
         self.qs, _ = get_qs(self.seq2,flexhis=True,pH=pH,residues=self.residues)
         self.alphas = self.lambdas*self.alpha
 
-        self.calc_x_linear(spiral=spiral, d=0.58, n_per_res=2)
+        self.calc_x_setup(comp_setup=comp_setup, d=0.58, n_per_res=2)
         self.init_bond_force()
         self.init_angle_force()
 
@@ -339,10 +341,10 @@ class RNA(Component):
         condition = (i%2 == 1) and (j == i+2)
         return condition
 
-    def calc_x_linear(self, spiral: bool = False, d: float = 0.58, n_per_res: int = 2):
-        if spiral:
+    def calc_x_setup(self, comp_setup: str = 'spiral', d: float = 0.58, n_per_res: int = 2):
+        if comp_setup == 'spiral':
             self.xinit = build.build_spiral(self.bondlengths[1::2], arc=d, n_per_res=n_per_res)
-        else:
+        else: # don't allow 'compact' setup for two-bead model
             z_bondlengths = self.bondlengths[::2]
             self.xinit = build.build_linear(z_bondlengths, n_per_res=n_per_res, ys=self.bondlengths)
 
@@ -413,11 +415,11 @@ class Lipid(Component):
     def __init__(self, name: str, comp_dict: dict, defaults: dict):
         super().__init__(name, comp_dict, defaults)
 
-    def calc_properties(self, pH: float = 7.0, verbose: bool = False, spiral: bool = True):
+    def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Lipid properties. """
 
-        super().calc_properties(pH=pH, verbose=verbose, spiral=spiral)
-        self.calc_x_linear(spiral=spiral) # can be overwritten in custom component
+        super().calc_properties(pH=pH, verbose=verbose)
+        self.calc_x_setup(comp_setup=comp_setup) # can be overwritten in custom component
         # self.calc_bondlength_map()
 
     @staticmethod
@@ -477,11 +479,11 @@ class Crowder(Component):
     def __init__(self, name: str, comp_dict: dict, defaults: dict):
         super().__init__(name, comp_dict, defaults)
 
-    def calc_properties(self, pH: float = 7.0, verbose: bool = False, spiral: bool = True):
+    def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Crowder properties. """
 
-        super().calc_properties(pH=pH, verbose=verbose, spiral=spiral)
-        self.calc_x_linear(spiral=spiral) # can be overwritten in custom component
+        super().calc_properties(pH=pH, verbose=verbose, comp_setup=comp_setup)
+        self.calc_x_setup(comp_setup=comp_setup) # can be overwritten in custom component
 
     @staticmethod
     def bond_check(i: int, j: int):
