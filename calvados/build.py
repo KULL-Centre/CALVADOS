@@ -133,15 +133,13 @@ def build_compact(nbeads, d=0.38, verbose=False):
     cti, ctj, ctk = 0, 0, 0
     
     for idx in range(nbeads):
+        xs.append([i,j,k])
         if ctk == N:
             if ctj == N:
-                if cti == N:
-                    raise
-                else:
-                    i += di
-                    cti += 1
-                    ctj = 0
-                    dj *= -1
+                i += di
+                cti += 1
+                ctj = 0
+                dj *= -1
             else:
                 j += dj
                 ctj += 1
@@ -150,7 +148,6 @@ def build_compact(nbeads, d=0.38, verbose=False):
         else:
             k += dk
             ctk += 1
-        xs.append([i,j,k])
     xs = (np.array(xs) - 0.5*N) * d
     return xs
 
