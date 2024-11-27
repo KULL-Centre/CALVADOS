@@ -23,7 +23,7 @@ k_eq : 0.02
 steps_eq : 1000
 
 friction_coeff: 0.01 
-slab_width : 60
+slab_width : 100
 slab_outer : 40
 random_number_seed : null
 report_potential_energy : False

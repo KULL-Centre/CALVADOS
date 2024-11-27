@@ -13,6 +13,8 @@ from calvados import build, interactions
 
 from yaml import safe_load
 
+from Bio.SeqUtils import seq3
+
 from .components import *
 
 class Sim:
@@ -45,28 +47,32 @@ class Sim:
     def make_components(self):
         self.components = np.empty(0)
         self.use_restraints = False
-        spiral = False if self.topol=='shift_ref_bead' else True
+        # comp_setup = 'spiral' if self.topol=='shift_ref_bead' else 'linear'
         for name, properties in self.comp_dict.items():
             molecule_type = properties.get('molecule_type', self.default_molecule_type)
             if molecule_type == 'protein':
                 # Protein component
+                comp_setup = 'compact'
                 comp = Protein(name, properties, self.comp_defaults)
             elif molecule_type in ['lipid','cooke_lipid']:
                 # Lipid component
+                comp_setup = 'linear'
                 comp = Lipid(name, properties, self.comp_defaults)
-                spiral = False
             elif molecule_type in ['crowder']:
                 # Crowder component
+                comp_setup = 'compact'
                 comp = Crowder(name, properties, self.comp_defaults)
             elif molecule_type in ['rna']:
                 # Crowder component
+                comp_setup = 'spiral'
                 comp = RNA(name, properties, self.comp_defaults)
             else:
                 # Generic component
+                comp_setup = 'linear'
                 comp = Component(name, properties, self.comp_defaults)
 
             comp.eps_lj = self.eps_lj
-            comp.calc_properties(pH=self.pH, verbose=self.verbose, spiral=spiral)
+            comp.calc_properties(pH=self.pH, verbose=self.verbose, comp_setup=comp_setup)
             if comp.restraint:
                 if comp.restraint_type == 'go':
                     comp.init_restraint_force(
@@ -391,6 +397,8 @@ class Sim:
                         self.top.add_bond(chain.atom(i), chain.atom(j))
         else:
             for idx,resname in enumerate(comp.seq):
+                if comp.molecule_type == 'protein':
+                    resname = str(seq3(resname)).upper()
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom('CA', element=md.element.carbon, residue=res)
             for i in range(chain.n_atoms-1):

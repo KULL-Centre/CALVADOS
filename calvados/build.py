@@ -123,6 +123,34 @@ def build_spiral(bondlengths, delta=0, arc=.38, separation=.7, n_per_res=1):
         r = b * phi
     return np.array(coords)+delta
 
+def build_compact(nbeads, d=0.38, verbose=False):
+    N = int(np.ceil(np.cbrt(nbeads)) - 1)
+    if verbose:
+        print(f'Building {N+1} * {N+1} * {N+1} grid.')
+    xs = []
+    i, j, k = 0, 0, 0
+    di, dj, dk = 1, 1, 1 # direction
+    cti, ctj, ctk = 0, 0, 0
+    
+    for idx in range(nbeads):
+        xs.append([i,j,k])
+        if ctk == N:
+            if ctj == N:
+                i += di
+                cti += 1
+                ctj = 0
+                dj *= -1
+            else:
+                j += dj
+                ctj += 1
+            ctk = 0
+            dk *= -1
+        else:
+            k += dk
+            ctk += 1
+    xs = (np.array(xs) - 0.5*N) * d
+    return xs
+
 def random_placement(box,xs_others,xinit,ntries=10000):
     ntry = 0
     while True: # random placement

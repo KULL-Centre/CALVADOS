@@ -51,7 +51,7 @@ analyses = f"""
 
 from calvados.analysis import save_rg
 
-save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
+save_rg("{path:s}","{sysname:s}","{residues_file:s}",".",10)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
