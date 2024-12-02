@@ -56,7 +56,7 @@ class Component:
 
     def calc_dmap(self):
         if self.periodic:
-            self.dmap = periodic_distances(self.xinit,self.dimensions)
+            self.dmap = self_distances(self.xinit,self.dimensions)
         else:
             self.dmap = self_distances(self.xinit)
 
