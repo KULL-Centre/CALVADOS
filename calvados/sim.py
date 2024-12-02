@@ -228,8 +228,14 @@ class Sim:
         # Equilibration forces
         if self.slab_eq:
             self.system.addForce(self.rcent)
+        if self.box_eq:
+            barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
+                    [self.pressure[0]*unit.bar,self.pressure[1]*unit.bar,self.pressure[2]*unit.bar],
+                    self.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
+                    self.boxscaling_xyz[2],1000)
+            self.system.addForce(barostat)
         if self.bilayer_eq:
-            barostat = openmm.openmm.MonteCarloMembraneBarostat(0*unit.bar,
+            barostat = openmm.openmm.MonteCarloMembraneBarostat(self.pressure[0]*unit.bar,
                     0*unit.bar*unit.nanometer, self.temp*unit.kelvin,
                     openmm.openmm.MonteCarloMembraneBarostat.XYIsotropic,
                     openmm.openmm.MonteCarloMembraneBarostat.ZFixed, 10000)
@@ -251,6 +257,8 @@ class Sim:
             print(f'rcent: {self.rcent.getNumParticles()} restraints')
         if self.bilayer_eq:
             print(f'Equilibration under zero lateral tension')
+        if self.box_eq:
+            print(f'Equilibration through changes in box side lengths along '+' and '.join(np.array(['X','Y','Z'])[self.boxscaling_xyz]))
 
     def place_molecule(self, comp: Component, ntries: int = 10000):
         """
@@ -469,7 +477,7 @@ class Sim:
             simulation.minimizeEnergy()
 
         if self.slab_eq:
-            print(f"Starting equilibration with k_eq == {self.k_eq:.4f} kJ/(mol*nm) for {self.steps_eq} steps", flush=True)
+            print(f"Starting slab equilibration with k_eq == {self.k_eq:.4f} kJ/(mol*nm) for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
             state_final = simulation.context.getState(getPositions=True)
@@ -491,8 +499,8 @@ class Sim:
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
-        if self.bilayer_eq:
-            print(f"Starting equilibration under zero lateral tension for {self.steps_eq} steps", flush=True)
+        if self.box_eq or self.bilayer_eq:
+            print(f"Starting pressure equilibration for {self.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
             state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
@@ -504,10 +512,14 @@ class Sim:
             topology.setPeriodicBoxVectors(state_final.getPeriodicBoxVectors())
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            if not self.zero_lateral_tension:
+            if not self.pressure_coupling:
                 for index, force in enumerate(self.system.getForces()):
                     if isinstance(force, openmm.openmm.MonteCarloMembraneBarostat):
-                        print(f'Removing membrane barostat {index}')
+                        print(f'Removing barostat {index}')
+                        self.system.removeForce(index)
+                        break
+                    if isinstance(force, openmm.openmm.MonteCarloAnisotropicBarostat):
+                        print(f'Removing barostat {index}')
                         self.system.removeForce(index)
                         break
             for index, force in enumerate(self.system.getForces()):
