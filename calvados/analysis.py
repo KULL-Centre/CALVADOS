@@ -111,6 +111,23 @@ def self_distances(pos):
             k += 1
     return dmap
 
+def periodic_distances(pos,box):
+    """ Distance map calculated using minimum image convention
+
+    Input: Matrix of positions and box dimensions
+    Output: Distance map
+    """
+    N = len(pos)
+    dmap = np.zeros((N,N))
+    d = distances.self_distance_array(pos,box)
+    k = 0
+    for i in range(N):
+        for j in range(i + 1, N):
+            dmap[i, j] = d[k]
+            dmap[j, i] = d[k]
+            k += 1
+    return dmap
+
 def calc_wcn(comp,pos,fdomains=None,ssonly=True,r0=0.7):
     """
     pos: positions [nm]

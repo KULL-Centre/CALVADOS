@@ -14,6 +14,7 @@ k_harmonic : 700.
 fdomains : 'domains.yaml'
 k_go : 10.
 use_com : true
+periodic: false
 
 colabfold : 0
 bfac_shift : 0.8

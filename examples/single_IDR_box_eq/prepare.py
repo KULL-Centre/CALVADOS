@@ -66,6 +66,7 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
   charge_termini = 'both', # charge N or C or both
+  periodic = True,
 
   # INPUT
   fresidues = residues_file, # residue definitions
