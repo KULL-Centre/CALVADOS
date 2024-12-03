@@ -55,7 +55,10 @@ class Component:
         self.init_bond_force()
 
     def calc_dmap(self):
-        self.dmap = self_distances(self.xinit)
+        if self.periodic:
+            self.dmap = self_distances(self.xinit,self.dimensions)
+        else:
+            self.dmap = self_distances(self.xinit)
 
     def calc_x_setup(self, d: float = 0.38, comp_setup: str = 'spiral',
             n_per_res: int = 1, ys = None):
@@ -113,7 +116,7 @@ class Protein(Component):
         """ Calculate protein positions from pdb. """
 
         input_pdb = f'{self.pdb_folder}/{self.name}.pdb'
-        self.xinit = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdb
+        self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdb
 
     def calc_ssdomains(self):
         """ Get bounds for restraints (harmonic). """

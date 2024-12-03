@@ -94,15 +94,21 @@ def calc_raw_dmap(pos0,pos1):
     dmap = distances.distance_array(pos0,pos1)
     return dmap
 
-def self_distances(pos):
+def self_distances(pos,box=None):
     """ Self distance map for matrix of positions
 
-    Input: Matrix of positions
+    If box dimensions are provided, distances are
+    calculated using minimum image convention
+
+    Input: Matrix of positions and (optional) box dimensions
     Output: Self distance map
     """
     N = len(pos)
     dmap = np.zeros((N,N))
-    d = distances.self_distance_array(pos)
+    if box is not None:
+        d = distances.self_distance_array(pos,box)
+    else:
+        d = distances.self_distance_array(pos)
     k = 0
     for i in range(N):
         for j in range(i + 1, N):

@@ -19,7 +19,7 @@ L = 20
 N_save = 1000
 
 # set final number of frames to save
-N_frames = 1000
+N_frames = 100
 
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 
@@ -30,7 +30,12 @@ config = Config(
   temp = 293, # K
   ionic = 0.15, # molar
   pH = 7.0, # 7.5
-  topol = 'center',
+
+  # MC BAROSTAT SETTINGS
+  box_eq = True, # equilibrate box side lengths
+  steps_eq = 100*N_save, # number of equilibration steps
+  pressure = [0.1,0,0], # pressure along x, y, and z
+  boxscaling_xyz = [False,False,True], # whether so scale along x, y, or z
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
@@ -61,6 +66,7 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
   charge_termini = 'both', # charge N or C or both
+  periodic = True,
 
   # INPUT
   fresidues = residues_file, # residue definitions

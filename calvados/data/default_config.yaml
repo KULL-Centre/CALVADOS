@@ -18,7 +18,10 @@ verbose : false
 
 slab_eq : false
 bilayer_eq : false
-zero_lateral_tension : false
+pressure_coupling : false
+box_eq : false
+pressure : [0,0,0]
+boxscaling_xyz : [true,true,true]
 k_eq : 0.02
 steps_eq : 1000
 

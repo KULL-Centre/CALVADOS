@@ -80,7 +80,7 @@ def draw_starting_vec(box):
     """
     vec = np.random.random(size=3) * box
     return vec
- 
+
 def build_linear(z_bondlengths, n_per_res=1, ys=None):
     """
     linear chain growing in z direction with possible extra beads at y offset n_per_res*ys
@@ -131,7 +131,7 @@ def build_compact(nbeads, d=0.38, verbose=False):
     i, j, k = 0, 0, 0
     di, dj, dk = 1, 1, 1 # direction
     cti, ctj, ctk = 0, 0, 0
-    
+
     for idx in range(nbeads):
         xs.append([i,j,k])
         if ctk == N:
@@ -310,7 +310,7 @@ def geometry_from_pdb(pdb,use_com=False):
     else:
         cas = u.select_atoms('name CA')
         pos = cas.positions / 10.
-    return pos
+    return pos, u.dimensions
 
 def bfac_from_pdb(pdb,confidence=70.):
     """ get pLDDT encoded in pdb b-factor column """
