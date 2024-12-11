@@ -42,7 +42,10 @@ class Sim:
             self.bilayer_eq = False
 
         if self.slab_eq:
-            self.rcent = interactions.init_eq_restraints(self.box,self.k_eq)
+            self.rcent = interactions.init_slab_restraints(self.box,self.k_eq)
+
+        if self.ext_force:
+            self.rcent = openmm.CustomExternalForce(self.ext_force_expr)
 
     def make_components(self):
         self.components = np.empty(0)
@@ -195,8 +198,8 @@ class Sim:
                 self.add_interactions(comp)
 
                 # add restraints towards box center
-                if self.slab_eq and comp.molecule_type == 'protein':
-                    self.add_eq_restraints(comp)
+                if (self.slab_eq or self.ext_force) and comp.ext_restraint:
+                    self.add_ext_restraints(comp)
 
         self.pdb_cg = f'{self.path}/top.pdb'
         a = md.Trajectory(self.pos, self.top, 0, self.box, [90,90,90])
@@ -224,6 +227,10 @@ class Sim:
                 self.system.addForce(force)
             if comp.restraint:
                 print(f'Number of restraints for comp {comp.name}: {comp.cs.getNumBonds()}')
+
+        # External force
+        if self.ext_force:
+            self.system.addForce(self.rcent)
 
         # Equilibration forces
         if self.slab_eq:
@@ -381,8 +388,8 @@ class Sim:
             if comp.restraint:
                 comp.write_restraints(self.path)
 
-    def add_eq_restraints(self,comp):
-        """ Add equilibration restraints. """
+    def add_ext_restraints(self,comp):
+        """ Add external-potential restraints. """
 
         offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
         for i in range(0,comp.nbeads):

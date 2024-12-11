@@ -55,14 +55,15 @@ components = Components(
   molecule_type = 'protein',
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
+  ext_restraint = False, # apply external restraints
   charge_termini = 'both', # charge N or C or both or none
-  
+
   # INPUT
   ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
   fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
 )
 
-components.add(name=args.name, nmol=100)
+components.add(name=args.name, ext_restraint=True, nmol=100)
 
 components.write(path,name='components.yaml')
 
