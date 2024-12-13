@@ -14,7 +14,6 @@ sysname = f'{args.name:s}'
 
 # set the side length of the cubic box
 L = 20
-wall_r = 3
 
 # set the saving interval (number of integration steps)
 N_save = 1000
@@ -33,7 +32,7 @@ config = Config(
   pH = 7.0, # 7.5
   topol = 'grid',
   ext_force = True,
-  ext_force_expr = f'step(d2-{2*wall_r**2:g})*d2; d2=periodicdistance(x, y, z, {L/2:g}, {L/2:g}, z)^2',
+  ext_force_expr = f'step(d-3)*0.5*(d-3)^2; d=periodicdistance(x, y, z, {L/2:g}, {L/2:g}, z)',
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
