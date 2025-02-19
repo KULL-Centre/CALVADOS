@@ -512,32 +512,32 @@ def yu_scaled(r,q,k_yu,rc_yu=4.):
     yus = yu*4*np.pi*r**2
     return yus
 
-# def make_q_intgrl_map(residues,temp=293.,ionic=0.15,rc_yu=4.):
-#     q_intgrl_map = {}
-#     eps_yu, k_yu = interactions.genParamsDH(temp,ionic)
-#     for key0, val0 in residues.iterrows():
-#         q0, sig0 = val0['q'], val0['sigmas']
-#         for key1, val1 in residues.iterrows():
-#             q1, sig1 = val1['q'], val1['sigmas']
-#             q = q0*q1 * eps_yu**2
-#             sig = 0.5*(sig0+sig1)
-#             res = quad(lambda r: yu_scaled(r,q,k_yu,rc_yu=rc_yu), 2**(1./6.)*sig, rc_yu)
-#             q_intgrl_map[(key0,key1)] = res[0]
-#             q_intgrl_map[(key1,key0)] = res[0]
-#     return q_intgrl_map
+def make_q_intgrl_map(residues,temp=293.,ionic=0.15,rc_yu=4.):
+    q_intgrl_map = {}
+    eps_yu, k_yu = interactions.genParamsDH(temp,ionic)
+    for key0, val0 in residues.iterrows():
+        q0, sig0 = val0['q'], val0['sigmas']
+        for key1, val1 in residues.iterrows():
+            q1, sig1 = val1['q'], val1['sigmas']
+            q = q0*q1 * eps_yu**2
+            sig = 0.5*(sig0+sig1)
+            res = quad(lambda r: yu_scaled(r,q,k_yu,rc_yu=rc_yu), 2**(1./6.)*sig, rc_yu)
+            q_intgrl_map[(key0,key1)] = res[0]
+            q_intgrl_map[(key1,key0)] = res[0]
+    return q_intgrl_map
 
-# def calc_q_ij(seq,q_intgrl_map):
-#     U = 0.
-#     seq = list(seq)
-#     N = len(seq)
-#     for idx in range(N):
-#         seqi = seq[idx]
-#         for jdx in range(idx,N):
-#             seqj = seq[jdx]
-#             u = q_intgrl_map[(seqi,seqj)]
-#             U += u
-#     U /= (N * (N-1) / 2. + N)
-#     return U
+def calc_q_ij(seq,q_intgrl_map):
+    U = 0.
+    seq = list(seq)
+    N = len(seq)
+    for idx in range(N):
+        seqi = seq[idx]
+        for jdx in range(idx,N):
+            seqj = seq[jdx]
+            u = q_intgrl_map[(seqi,seqj)]
+            U += u
+    U /= (N * (N-1) / 2. + N)
+    return U
 
 ############ FAST KAPPA ################
 
