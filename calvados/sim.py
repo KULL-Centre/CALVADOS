@@ -200,6 +200,10 @@ class Sim:
                 # add restraints towards box center
                 if (self.slab_eq or self.ext_force) and comp.ext_restraint:
                     self.add_ext_restraints(comp)
+        
+        if self.custom_restraints:
+            self.map_custom_restraints()
+            self.add_custom_restraints()
 
         self.pdb_cg = f'{self.path}/top.pdb'
         a = md.Trajectory(self.pos, self.top, 0, self.box, [90,90,90])
@@ -235,12 +239,20 @@ class Sim:
         # Equilibration forces
         if self.slab_eq:
             self.system.addForce(self.rcent)
+
+        # Custom forces
+        if self.custom_restraints:
+            self.system.addForce(self.cres)
+        
+        # Barostat force
         if self.box_eq:
             barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
                     [self.pressure[0]*unit.bar,self.pressure[1]*unit.bar,self.pressure[2]*unit.bar],
                     self.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
                     self.boxscaling_xyz[2],1000)
             self.system.addForce(barostat)
+        
+        # Bilayer eq. force
         if self.bilayer_eq:
             barostat = openmm.openmm.MonteCarloMembraneBarostat(self.pressure[0]*unit.bar,
                     0*unit.bar*unit.nanometer, self.temp*unit.kelvin,
@@ -327,10 +339,22 @@ class Sim:
 
     def add_restraints(self, comp, offset, min_scale = 0.1, exclude_nonbonded = True):
         """ Add restraints to single molecule. """
-        # restr_pairlist = []
 
         exclusion_map = comp.add_restraints(offset, min_scale=min_scale)
         if exclude_nonbonded: # exclude ah, yu when restraining
+            self.add_exclusions(exclusion_map)
+
+    def add_custom_restraints(self, exclude_nonbonded = True):
+        exclusion_map = []
+        # self.custom_restr_pairs = []
+        self.cres = interactions.init_restraints(self.custom_restraint_type)
+        for i, j, r, k in self.custom_restr_abs: # i, j, r, k
+            print(i,j,r,k)
+            self.cres, restr_pair = interactions.add_single_restraint(
+                self.cres, self.custom_restraint_type, r, k, i, j)
+            # self.custom_restr_pairs.append(restr_pair)
+            exclusion_map.append([i,j])
+        if exclude_nonbonded: # exclude cres when restraining
             self.add_exclusions(exclusion_map)
 
     def add_exclusions(self, exclusion_map):
@@ -420,12 +444,52 @@ class Sim:
                 if comp.bond_check(i,i+1):
                     self.top.add_bond(chain.atom(i), chain.atom(i+1))
 
-
     def add_particles_system(self,mws):
         """ Add particles of one molecule to openMM system. """
 
         for mw in mws:
             self.system.addParticle(mw*unit.amu)
+
+    def map_custom_restraints(self):
+        """ Map input format for custom restraints to absolute bead number """
+        custom_restr = self.parse_custom_restraints(self.fcustom_restraints)
+        total_beads = [0]
+        for idx, comp in enumerate(self.components):
+            comp.start_bead = total_beads[-1]
+            total_beads.append(int(comp.nmol * comp.nbeads))
+        self.custom_restr_abs = []
+        for i,j,r,k in custom_restr:
+            print(i,j,r,k)
+            crestr = []
+            for idx, x in enumerate([i,j]):
+                name, copy, bead = x[0], x[1], x[2] # 1-based
+                for idx, comp in enumerate(self.components):
+                    if comp.name == name:
+                        x_abs = comp.start_bead + (copy-1)*comp.nbeads + (bead-1)
+                        break
+                crestr.append(x_abs)
+            crestr.append(float(r))
+            crestr.append(float(k))
+            self.custom_restr_abs.append(crestr)
+
+    @staticmethod
+    def parse_custom_restraints(fcustom_restraints):
+        custom_restraints = []
+        with open(fcustom_restraints,'r') as f:
+            for line in f.readlines():
+                spl = line.split('|')
+                i = spl[0].split()
+                j = spl[1].split()
+                r = spl[2].split()[0]
+                k = spl[2].split()[1]
+                restr = [
+                    [i[0], int(i[1]), int(i[2])],
+                    [j[0], int(j[1]), int(j[2])],
+                    r,
+                    k
+                ]
+                custom_restraints.append(restr) # 1-based
+        return custom_restraints
 
     def simulate(self):
         """ Simulate. """

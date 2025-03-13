@@ -168,7 +168,6 @@ def add_scaled_yu(scYU, i, j, offset, comp):
 
 def add_exclusion(force, i: int, j: int):
     """ Add exclusions to a list of openMM forces """
-
     force.addExclusion(i,j)
     return force
 
