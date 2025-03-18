@@ -17,6 +17,8 @@ from scipy.stats import sem
 
 from calvados.build import get_ssdomains
 
+import matplotlib.pyplot as plt
+
 import os
 import sys
 from pathlib import Path
@@ -641,7 +643,7 @@ class SlabAnalysis:
             ax.axvline(c1,color='gray', ls='dashed')
             ax.axvline(c2,color='gray', ls='dotted')
 
-        profiles = np.load(f'{self.output_path}/{name:s}_profiles.npy').T # all trajectory-averaged profiles
+        profiles = np.load(f'{self.output_path}/{self.name}_profiles.npy') # all trajectory-averaged profiles
         z = profiles[0]
         h_ref = profiles[1]
 
@@ -654,10 +656,10 @@ class SlabAnalysis:
         ax.set(xlabel='z [nm]', ylabel='Concentration [mM]')
         ax.set(yscale='log')
         ax.set(title=self.name)
-        ax.legend()
+        ax.legend(fontsize=8)
 
         fig.tight_layout()
-        fig.savefig(f'{self.output_path}/{name:s}_profiles.pdf')
+        fig.savefig(f'{self.output_path}/{self.name}_profiles.pdf')
 
     @staticmethod
     def calc_z_Angstr(u):
