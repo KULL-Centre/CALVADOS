@@ -1,4 +1,5 @@
 import os
+import calvados as cal
 from calvados.cfg import Config, Job, Components
 import subprocess
 import numpy as np
@@ -43,9 +44,16 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import calc_slab_profiles
+from calvados.analysis import SlabAnalysis
 
-calc_slab_profiles(path="{path:s}",name="{sysname:s}",output_folder="data",ref_atoms="all",start=0)
+slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
+  output_path="data", ref_name="{sysname:s}", verbose=True)
+
+slab.center(start=0, center_target='all')
+slab.calc_profiles()
+slab.calc_concentrations()
+print(slab.df_results)
+slab.plot_density_profiles()
 """
 
 config.write(path,name='config.yaml',analyses=analyses)

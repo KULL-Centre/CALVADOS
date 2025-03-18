@@ -45,8 +45,26 @@ config = Config(
 # PATH
 path = f'{cwd}/{sysname}'
 subprocess.run(f'mkdir -p {path}',shell=True)
+subprocess.run(f'mkdir -p data',shell=True)
 
-config.write(path,name='config.yaml')
+analyses = f"""
+
+from calvados.analysis import SlabAnalysis
+
+slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
+  output_path="data", 
+  ref_name = "FUSRGG3", ref_chains = (0, 99),
+  client_names = ['polyR30'], client_chain_list = [(100,124)],
+  verbose=True)
+
+slab.center(start=0, center_target='all') # center_target='ref' for centering only on FUSRGG3
+slab.calc_profiles()
+slab.calc_concentrations()
+print(slab.df_results)
+slab.plot_density_profiles()
+"""
+
+config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
