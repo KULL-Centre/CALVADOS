@@ -57,5 +57,7 @@ For further questions and inquiries, please contact us.
 
 [Ikki Yasuda (@iyasuda)](https://github.com/iyasuda)
 
+[Arriën Symon Rauh (@ASRauh)](https://github.com/ASRauh)
+
 [Kresten Lindorff-Larsen (@lindorff-larsen)](https://github.com/lindorff-larsen)
 
