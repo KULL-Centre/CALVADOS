@@ -5,7 +5,6 @@ import calvados.interactions
 import calvados.postprocess
 import calvados.sequence
 import calvados.sim
-# import calvados.slab_conc
 import calvados.utilities
 import calvados.components
 
