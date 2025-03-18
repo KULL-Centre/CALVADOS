@@ -6,20 +6,21 @@ import numpy as np
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
-parser.add_argument('--name',nargs='?',required=True,type=str)
+parser.add_argument('--name_1',nargs='?',required=True,type=str)
+parser.add_argument('--name_2',nargs='?',required=True,type=str)
 args = parser.parse_args()
 
 cwd = os.getcwd()
-sysname = f'{args.name:s}'
+sysname = f'{args.name_1:s}_{args.name_2:s}'
 
 # set the side length of the cubic box
-L = 20
+L = 10
 
 # set the saving interval (number of integration steps)
-N_save = 7000
+N_save = 1000
 
 # set final number of frames to save
-N_frames = 1010
+N_frames = 1
 
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 
@@ -28,9 +29,9 @@ config = Config(
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
   temp = 293, # K
-  ionic = 0.15, # M
-  pH = 7.5,
-  topol = 'center',
+  ionic = 0.15, # molar
+  pH = 7.0, # 7.5
+  topol = 'random',
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
@@ -49,9 +50,10 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import save_conf_prop
+from calvados.analysis import calc_com_traj, calc_contact_map
 
-save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path="data",start=100,is_idr=True,select='all')
+calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",list_chainids=[[0],[1]])
+calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",prot_1_chainids=[0],prot_2_chainids=[1])
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
@@ -68,7 +70,8 @@ components = Components(
   ffasta = f'{cwd}/input/idr.fasta', # residue definitions
 )
 
-components.add(name=args.name)
+components.add(name=args.name_1)
+components.add(name=args.name_2)
 
 components.write(path,name='components.yaml')
 

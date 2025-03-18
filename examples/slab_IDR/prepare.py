@@ -15,6 +15,7 @@ cwd = os.getcwd()
 N_save = int(5e4)
 
 sysname = f'{args.name:s}_{args.replica:d}'
+residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 
 config = Config(
   # GENERAL
@@ -44,7 +45,7 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import SlabAnalysis
+from calvados.analysis import SlabAnalysis, calc_com_traj, calc_contact_map
 
 slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
   output_path="data", ref_name="{sysname:s}", verbose=True)
@@ -54,6 +55,8 @@ slab.calc_profiles()
 slab.calc_concentrations()
 print(slab.df_results)
 slab.plot_density_profiles()
+calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",list_chainids=[np.arange(100)])
+calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",prot_1_chainids=np.arange(100),prot_2_chainids=np.arange(100),in_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
@@ -68,7 +71,7 @@ components = Components(
 
   # INPUT
   ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
-  fresidues = f'{cwd}/input/residues_CALVADOS2.csv', # residue definitions
+  fresidues = residues_file, # residue definitions
 )
 
 components.add(name=args.name, ext_restraint=True, nmol=100)

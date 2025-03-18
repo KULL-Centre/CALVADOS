@@ -16,6 +16,8 @@ N_save = int(5e4)
 
 sysname = f'{args.name:s}_{args.replica:d}'
 
+residues_file = f'{cwd}/input/residues_CALVADOS3.csv'
+
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
@@ -45,9 +47,19 @@ subprocess.run(f'mkdir -p {path}',shell=True)
 subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
-from calvados.analysis import calc_slab_profiles
 
-calc_slab_profiles(path="{path:s}",name="{sysname:s}",output_folder="data",ref_atoms="all",start=0)
+from calvados.analysis import SlabAnalysis, calc_com_traj, calc_contact_map
+
+slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
+  output_path="data", ref_name="{sysname:s}", verbose=True)
+
+slab.center(start=0, center_target='all')
+slab.calc_profiles()
+slab.calc_concentrations()
+print(slab.df_results)
+slab.plot_density_profiles()
+calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",list_chainids=[np.arange(100)])
+calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",prot_1_chainids=np.arange(100),prot_2_chainids=np.arange(100),in_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
@@ -60,7 +72,7 @@ components = Components(
   charge_termini = 'both', # charge N or C or both or none
 
   # INPUT
-  fresidues = f'{cwd}/input/residues_CALVADOS3.csv', # residue definitions
+  fresidues = residues_file, # residue definitions
   fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
   pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
 

@@ -18,6 +18,8 @@ N_save = 100
 # set final number of frames to save
 N_frames = 100000
 
+residues_file = f'{cwd}/residues_C2RNA.csv'
+
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
@@ -52,7 +54,7 @@ analyses = f"""
 from calvados.analysis import SlabAnalysis
 
 slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
-  output_path="data", 
+  output_path="data",
   ref_name = "FUSRGG3", ref_chains = (0, 99),
   client_names = ['polyR30'], client_chain_list = [(100,124)],
   verbose=True)
@@ -62,6 +64,8 @@ slab.calc_profiles()
 slab.calc_concentrations()
 print(slab.df_results)
 slab.plot_density_profiles()
+calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",list_chainids=[np.arange(100)])
+calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",prot_1_chainids=np.arange(100),prot_2_chainids=np.arange(100,125),in_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
@@ -71,7 +75,7 @@ components = Components(
   restraint = False, # apply restraints
   ext_restraint = False, # apply external restraints
   charge_termini = 'both', # charge N or C or both
-  fresidues = f'{cwd}/residues_C2RNA.csv', # residue definitions
+  fresidues = residues_file, # residue definitions
   ffasta = f'{cwd}/mix.fasta',
 
   # RNA settings

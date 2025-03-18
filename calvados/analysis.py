@@ -161,9 +161,9 @@ def calc_wcn(comp,pos,fdomains=None,ssonly=True,r0=0.7):
 #     cmap = np.where(dmap<cutoff,1,0)
 #     return(cmap)
 
-def calc_cmap(domain0,domain1,cutoff=1):
+def calc_cmap(domain0,domain1,cutoff=1.0):
      """ Contact map for single configuration
- 
+
      Input: MDAnalysis Atom groups (can be the same or different)
      Output: Contact map
      """
@@ -172,7 +172,7 @@ def calc_cmap(domain0,domain1,cutoff=1):
      cmap = .5 - .5*np.tanh((dmap-cutoff)/.3)
      return(cmap)
 
-def cmap_traj(u,domain0,domain1,cutoff=1.5,start=None,end=None,step=1):
+def cmap_traj(u,domain0,domain1,cutoff=1.0,start=None,end=None,step=1):
     """ Average number of contacts along trajectory
 
     Input:
@@ -355,48 +355,45 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
     # print(ij.shape)
     # print(dij.shape)
     if r0 == None:
-        (r0, v), pcov = curve_fit(scaling_exp,ij[ij0:],dij[ij0:])
+        (r0, v), pcov = curve_fit(scaling_exp,ij[ij>ij0],dij[ij>ij0])
         perr = np.sqrt(np.diag(pcov))
         verr = perr[1]
         # print(pcov)
     else:
-        v, pcov = curve_fit(lambda x, v: scaling_exp(x,r0,v), ij[ij0:], dij[ij0:])
+        v, pcov = curve_fit(lambda x, v: scaling_exp(x,r0,v), ij[ij>ij0], dij[ij>ij0])
         v = v[0]
         perr = np.sqrt(np.diag(pcov))
         verr = perr[0]
     return ij, dij, r0, v, verr
 
-def save_rg(path,name,residues_file,output_prefix,nskip,select='all'):
+def save_conf_prop(path,name,residues_file,output_path,start,is_idr=True,select='all',cutoff=1.0, kmax=3):
     residues = pd.read_csv(residues_file).set_index('three')
-    u = mda.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
+    u = MDAnalysis.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
     ag = u.select_atoms(select)
-    rgs = calc_rg(u,ag,ag.resnames.tolist(),residues,start=nskip)
+    rgs = calc_rg(u,ag,ag.resnames.tolist(),residues,start=start)
+    np.save(output_path+'/rgs.npy',rgs)
     block_rg = BlockAnalysis(rgs)
     block_rg.SEM()
-    df_analysis = pd.DataFrame(index=['Rg'],columns=['value','error'])
-    df_analysis.loc['Rg','value'] = np.mean(rgs)
-    df_analysis.loc['Rg','error'] = block_rg.sem
-    df_analysis.to_csv(output_prefix+'/Rg.csv')
-
-def save_ree(path,name,output_prefix,nskip,select='all'):
-    u = mda.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
-    ag = u.select_atoms(select)
-    rees, _, _ = calc_ete(u,ag,start=nskip)
+    rees, _, _ = calc_ete(u,ag,start=start)
+    np.save(output_path+'/rees.npy',rees)
     block_ree = BlockAnalysis(rees)
     block_ree.SEM()
-    df_analysis = pd.DataFrame(index=['Ree'],columns=['value','error'])
+    df_analysis = pd.DataFrame(index=['Rg','Ree'],columns=['value','error'])
+    df_analysis.loc['Rg','value'] = np.mean(rgs)
+    df_analysis.loc['Rg','error'] = block_rg.sem
     df_analysis.loc['Ree','value'] = np.mean(rees)
     df_analysis.loc['Ree','error'] = block_ree.sem
-    df_analysis.to_csv(output_prefix+'/Ree.csv')
-
-def save_nu(path,name,output_prefix,nskip,select='all'):
-    u = mda.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
+    if is_idr:
+        ij, dij, _, nu, nu_err = fit_scaling_exp(u,ag,start=start)
+        df_analysis.loc['nu','value'] = nu
+        df_analysis.loc['nu','error'] = nu_err
+        np.save(output_path+'/internal_distances.npy',[ij,dij])
+    df_analysis.to_csv(output_path+'/conf_prop.csv')
     ag = u.select_atoms(select)
-    _, _, _, nu, nu_err = fit_scaling_exp(u,ag,start=nskip)
-    df_analysis = pd.DataFrame(index=['nu'],columns=['value','error'])
-    df_analysis.loc['nu','value'] = nu
-    df_analysis.loc['nu','error'] = nu_err
-    df_analysis.to_csv(output_prefix+'/nu.csv')
+    cmap = cmap_traj(u,ag,ag,start,cutoff)
+    for k in range(-kmax,kmax+1): # kmax: diagonals to exclude (up to kmax bonds apart)
+         cmap -= np.diag(np.diag(cmap,k=k),k=k)
+    np.save(output_path+'/cmap.npy',cmap)
 
 class SlabAnalysis:
     def __init__(self,
@@ -425,7 +422,7 @@ class SlabAnalysis:
         if len(self.client_names) == 0:
             self.client_names = [f'client_{idx}' for idx in range(len(self.client_chain_list))]
         self.verbose = verbose
-        
+
         u = mda.Universe(f'{self.input_path}/{self.input_pdb}')
         self.lz, self.edges, self.z = self.calc_z_Angstr(u)
         _, self.edges_nm, self.z_nm = self.calc_z_nm_centered(u)
@@ -439,8 +436,8 @@ class SlabAnalysis:
 
     def center(self, start=None, end=None, step=1,
             center_target = 'ref'):
-        """ 
-        Center slab trajectory. 
+        """
+        Center slab trajectory.
         center_target: 'ref' or 'all'. Define if particles for centering are from reference or whole system.
         """
 
@@ -497,10 +494,10 @@ class SlabAnalysis:
 
     def calc_profiles(self, start=None, end=None, step=1,
             save_individual_profiles=True):
-        """ 
+        """
         Calculate concentration profiles for reference chains (and possible clients).
         Keep start=None, end=None, step=1 if the centered trajectory is already cropped. """
-    
+
         u = mda.Universe(f'{self.input_path}/{self.input_pdb}', f'{self.input_path}/{self.centered_dcd}', in_memory=True)
 
         if self.ref_chains is None:
@@ -564,7 +561,7 @@ class SlabAnalysis:
             write_conc_arrays=True,
             input_pdb='top.pdb',
             plot_profiles=True):
-        
+
         self.pden, self.pdil = pden, pdil
         self.dGmin = dGmin
         self.df_results = pd.DataFrame(dtype=object)
@@ -587,8 +584,8 @@ class SlabAnalysis:
             results['first_chain'], results['last_chain'] = first, last
             self.save_conc_results(f'{self.name}_{self.client_names[i]}', results)
 
-        self.df_results.to_csv(f'{self.output_path}/{self.name}_results.csv')
-    
+        self.df_results.to_csv(f'{self.output_path}/{self.name}_ps_results.csv')
+
     def save_conc_results(self, comp_name, results):
         for key, val in results.items():
             if key in ['dense_array', 'dilute_array']:
@@ -772,3 +769,110 @@ class SlabAnalysis:
         edil = block_dil.sem
 
         return eden, edil
+
+def calc_com_traj(path,name,output_path,residues_file,list_chainids=[[0]],start=None,end=None,step=1,input_pdb='top.pdb'):
+    if not os.path.isfile(f'{path:s}/traj.dcd'):
+        u = MDAnalysis.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
+        ag = u.select_atoms('all')
+        n_atoms = ag.n_atoms
+        # create list of bonds
+        bonds = []
+        for segment in u.segments:
+            for i in segment.atoms.indices[:-1]:
+                bonds.extend([(i, i+1)])
+        u.add_TopologyAttr('bonds', bonds)
+        with MDAnalysis.Writer(f'{path:s}/traj.dcd',n_atoms) as W:
+            for t,ts in enumerate(u.trajectory[start:end:step]):
+                # make chains whole
+                ts = transformations.unwrap(ag)(ts)
+                W.write(ag)
+
+    traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
+    traj.xyz -= traj.unitcell_lengths[0,:]/2
+
+    residues = pd.read_csv(residues_file).set_index('three')
+
+    chain_props = {}
+
+    if len(list_chainids) > 0:
+        for prot_chainids, chain_name in zip(list_chainids,['A','B','C','D','E']):
+            seq = [res.name for res in traj.top.chain(prot_chainids[0]).residues]
+            masses = residues.loc[seq,'MW'].values
+            masses[0] += 2
+            masses[-1] += 16
+            chain_props[chain_name] = {'N':len(seq),'masses':masses,'rgs':[]}
+
+    # calculate traj of chain COM
+    cmtop = md.Topology()
+    xyz = np.empty((traj.n_frames,traj.n_chains,3))
+    for chain in traj.top.chains:
+        if len(list_chainids) > 0:
+            for prot_chainsid, chain_name in zip(list_chainids,['A','B','C','D','E']):
+                if chain.index in prot_chainsid:
+                   break
+        mws = chain_props[chain_name]['masses']
+        new_chain = cmtop.add_chain()
+        res = cmtop.add_residue('COM', new_chain, resSeq=chain.index)
+        cmtop.add_atom(chain_name, element=traj.top.atom(0).element, residue=res)
+        t_chain = traj.atom_slice(traj.top.select(f'chainid {chain.index:d}'))
+        com = np.sum(t_chain.xyz*mws[np.newaxis,:,np.newaxis],axis=1)/mws.sum()
+        # calculate residue-cm distances
+        si = np.linalg.norm(t_chain.xyz - com[:,np.newaxis,:],axis=2)
+        # calculate rg
+        chain_rg = np.sqrt(np.sum(si**2*mws,axis=1)/mws.sum())
+        chain_props[chain_name]['rgs'].append(chain_rg.tolist())
+        xyz[:,chain.index] = com
+    cmtraj = md.Trajectory(xyz, cmtop, traj.time, traj.unitcell_lengths, traj.unitcell_angles)
+
+    for chain_name in chain_props.keys():
+        np.save(output_path+f'/{name:s}_rg_prot_{chain_name:s}.npy',chain_props[chain_name]['rgs'])
+
+    # calculate radial distribution function
+    cmtraj[0].save_pdb(f'{path:s}/com_top.pdb')
+    cmtraj.save_dcd(f'{path:s}/com_traj.dcd')
+
+def calc_contact_map(path,name,output_path,prot_1_chainids,prot_2_chainids,in_slab=False,input_pdb='top.pdb'):
+    if in_slab and not os.path.isfile(output_path+f'/{name:s}_ps_results.csv'):
+        raise ValueError('Please run function in SlabAnalysis class first')
+    elif in_slab:
+        ps_results = pd.read_csv(output_path+f'/{name:s}_ps_results.csv',index_col=0)
+        z_dil = 0.5*(np.abs(ps_results.loc[f'{name:s}_ref','cutoffs_dilute_left']) + ps_results.loc[f'{name:s}_ref','cutoffs_dilute_right'])
+        z_den = 0.5*(np.abs(ps_results.loc[f'{name:s}_ref','cutoffs_dense_left']) + ps_results.loc[f'{name:s}_ref','cutoffs_dense_right'])
+    if not os.path.isfile(f'{path:s}/com_traj.dcd'):
+        raise ValueError('Please run calc_com_traj first')
+    else:
+        cmtraj = md.load_dcd(f'{path:s}/com_traj.dcd',top=f'{path:s}/com_top.pdb')
+
+    traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
+    traj.xyz -= traj.unitcell_lengths[0,:]/2
+
+    if in_slab:
+        cm_z_1 = cmtraj.xyz[:,prot_1_chainids,2]
+        prot_1_chainids = np.argmin(np.abs(cm_z_1),axis=0)
+        mask_den = np.abs(cm_z_1[:,2]) < z_den
+        mask_dil = np.abs(cm_z_1[:,2]) > z_dil
+        rg_1 = np.load(output_path+f'/{name:s}_rg_prot_1.npy')
+        rg_2 = np.load(output_path+f'/{name:s}_rg_prot_2.npy')
+        np.save(output_path+f'/{name:s}_rg_prot_1_den.npy',rg_1[mask_den])
+        np.save(output_path+f'/{name:s}_rg_prot_1_dil.npy',rg_1[mask_dil])
+        np.save(output_path+f'/{name:s}_rg_prot_2_den.npy',rg_2[mask_den])
+        np.save(output_path+f'/{name:s}_rg_prot_2_dil.npy',rg_2[mask_dil])
+
+    N_res_1 = traj.top.chain(prot_1_chainids[0]).n_residues
+    N_res_2 = traj.top.chain(prot_2_chainids[0]).n_residues
+
+    cmap_sum = np.zeros((N_res_1,N_res_2))
+    for chain_1 in np.unique(prot_1_chainids):
+        surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in prot_2_chainids if i != chain_1]))
+        pair_indices = traj.top.select_pairs(f'chainid {chain_1:d}',surrounding_chains)
+        if in_slab:
+            ndx = prot_1_chainids==chain_1
+        else:
+            ndx = np.full(traj.n_frames, True, dtype=bool)
+            if np.any(ndx):
+                d = md.compute_distances(traj[ndx],pair_indices)
+                cmap = .5-.5*np.tanh((d-1.)/.3)
+                cmap_sum += cmap.reshape(ndx.size,N_res_1,-1,N_res_2).sum(axis=0).sum(axis=1)
+    cmap_sum /= traj.n_frames
+    # save energy and contact maps
+    np.save(output_path+f'/{name:s}_contact_map.npy',cmap)

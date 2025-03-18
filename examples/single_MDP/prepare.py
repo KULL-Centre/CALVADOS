@@ -49,12 +49,12 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import save_rg
+from calvados.analysis import save_conf_prop
 
-save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
+save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path="data",nskip=100,is_idr=False,select='all')
 """
 
-config.write(path,name='config.yaml')
+config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
