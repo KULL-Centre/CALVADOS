@@ -825,7 +825,7 @@ def calc_com_traj(path,name,output_path,residues_file,list_chainids=[[0]],start=
     cmtraj = md.Trajectory(xyz, cmtop, traj.time, traj.unitcell_lengths, traj.unitcell_angles)
 
     for chain_name in chain_props.keys():
-        np.save(output_path+f'/{name:s}_rg_prot_{chain_name:s}.npy',chain_props[chain_name]['rgs'])
+        np.save(output_path+f'/{name:s}_rg_prot_{chain_name:s}.npy',np.asarray(chain_props[chain_name]['rgs']).flatten())
 
     # calculate radial distribution function
     cmtraj[0].save_pdb(f'{path:s}/com_top.pdb')
@@ -838,9 +838,9 @@ def calc_contact_map(path,name,output_path,prot_1_chainids,prot_2_chainids,in_sl
         ps_results = pd.read_csv(output_path+f'/{name:s}_ps_results.csv',index_col=0)
         z_dil = 0.5*(np.abs(ps_results.loc[f'{name:s}_ref','cutoffs_dilute_left']) + ps_results.loc[f'{name:s}_ref','cutoffs_dilute_right'])
         z_den = 0.5*(np.abs(ps_results.loc[f'{name:s}_ref','cutoffs_dense_left']) + ps_results.loc[f'{name:s}_ref','cutoffs_dense_right'])
-    if not os.path.isfile(f'{path:s}/com_traj.dcd'):
+    if in_slab and not os.path.isfile(f'{path:s}/com_traj.dcd'):
         raise ValueError('Please run calc_com_traj first')
-    else:
+    elif in_slab:
         cmtraj = md.load_dcd(f'{path:s}/com_traj.dcd',top=f'{path:s}/com_top.pdb')
 
     traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
@@ -851,12 +851,12 @@ def calc_contact_map(path,name,output_path,prot_1_chainids,prot_2_chainids,in_sl
         prot_1_chainids = np.argmin(np.abs(cm_z_1),axis=0)
         mask_den = np.abs(cm_z_1[:,2]) < z_den
         mask_dil = np.abs(cm_z_1[:,2]) > z_dil
-        rg_1 = np.load(output_path+f'/{name:s}_rg_prot_1.npy')
-        rg_2 = np.load(output_path+f'/{name:s}_rg_prot_2.npy')
-        np.save(output_path+f'/{name:s}_rg_prot_1_den.npy',rg_1[mask_den])
-        np.save(output_path+f'/{name:s}_rg_prot_1_dil.npy',rg_1[mask_dil])
-        np.save(output_path+f'/{name:s}_rg_prot_2_den.npy',rg_2[mask_den])
-        np.save(output_path+f'/{name:s}_rg_prot_2_dil.npy',rg_2[mask_dil])
+        rg_1 = np.load(output_path+f'/{name:s}_rg_prot_A.npy')
+        rg_2 = np.load(output_path+f'/{name:s}_rg_prot_B.npy')
+        np.save(output_path+f'/{name:s}_rg_prot_A_den.npy',rg_1[mask_den])
+        np.save(output_path+f'/{name:s}_rg_prot_A_dil.npy',rg_1[mask_dil])
+        np.save(output_path+f'/{name:s}_rg_prot_B_den.npy',rg_2[mask_den])
+        np.save(output_path+f'/{name:s}_rg_prot_B_dil.npy',rg_2[mask_dil])
 
     N_res_1 = traj.top.chain(prot_1_chainids[0]).n_residues
     N_res_2 = traj.top.chain(prot_2_chainids[0]).n_residues
@@ -875,4 +875,4 @@ def calc_contact_map(path,name,output_path,prot_1_chainids,prot_2_chainids,in_sl
                 cmap_sum += cmap.reshape(ndx.size,N_res_1,-1,N_res_2).sum(axis=0).sum(axis=1)
     cmap_sum /= traj.n_frames
     # save energy and contact maps
-    np.save(output_path+f'/{name:s}_contact_map.npy',cmap)
+    np.save(output_path+f'/{name:s}_cmap.npy',cmap_sum)
