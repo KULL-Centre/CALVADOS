@@ -366,7 +366,7 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
         verr = perr[0]
     return ij, dij, r0, v, verr
 
-def save_conf_prop(path,name,residues_file,output_path,start,is_idr=True,select='all',cutoff=1.0, kmax=3):
+def save_conf_prop(path,name,residues_file,output_path,start=0,is_idr=True,select='all',cutoff=1.0, kmax=3):
     residues = pd.read_csv(residues_file).set_index('three')
     u = MDAnalysis.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
     ag = u.select_atoms(select)
@@ -390,7 +390,7 @@ def save_conf_prop(path,name,residues_file,output_path,start,is_idr=True,select=
         np.save(output_path+'/internal_distances.npy',[ij,dij])
     df_analysis.to_csv(output_path+'/conf_prop.csv')
     ag = u.select_atoms(select)
-    cmap = cmap_traj(u,ag,ag,start,cutoff)
+    cmap = cmap_traj(u,ag,ag,cutoff,start)
     for k in range(-kmax,kmax+1): # kmax: diagonals to exclude (up to kmax bonds apart)
          cmap -= np.diag(np.diag(cmap,k=k),k=k)
     np.save(output_path+'/cmap.npy',cmap)

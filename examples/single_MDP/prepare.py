@@ -51,7 +51,7 @@ analyses = f"""
 
 from calvados.analysis import save_conf_prop
 
-save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path="data",nskip=100,is_idr=False,select='all')
+save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path=f"{cwd}/data",start=100,is_idr=False,select='all')
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
