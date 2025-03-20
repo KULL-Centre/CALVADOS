@@ -55,8 +55,8 @@ import numpy as np
 import os
 import cProfile
 
-class StateDataReporter(object):
-    """StateDataReporter outputs information about a simulation, such as energy and temperature, to a file.
+class PressureDataReporter(object):
+    """PressureDataReporter outputs pressure to a file.
 
     This reporter is modified from the StateDataReporter shipped with OpenMM python API.
     It adds support for reporting the pressure tensor.
