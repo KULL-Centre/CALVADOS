@@ -368,7 +368,7 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
 
 def save_conf_prop(path,name,residues_file,output_path,start=0,is_idr=True,select='all',cutoff=1.0, kmax=3):
     residues = pd.read_csv(residues_file).set_index('three')
-    u = MDAnalysis.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
+    u = mda.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
     ag = u.select_atoms(select)
     rgs = calc_rg(u,ag,ag.resnames.tolist(),residues,start=start)
     np.save(output_path+'/rgs.npy',rgs)
@@ -772,7 +772,7 @@ class SlabAnalysis:
 
 def calc_com_traj(path,name,output_path,residues_file,list_chainids=[[0]],start=None,end=None,step=1,input_pdb='top.pdb'):
     if not os.path.isfile(f'{path:s}/traj.dcd'):
-        u = MDAnalysis.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
+        u = mda.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
         ag = u.select_atoms('all')
         n_atoms = ag.n_atoms
         # create list of bonds
