@@ -52,6 +52,8 @@ import openmm.unit as unit
 import math
 import time
 import numpy as np
+import os
+import cProfile
 
 class StateDataReporter(object):
     """StateDataReporter outputs information about a simulation, such as energy and temperature, to a file.
@@ -64,7 +66,7 @@ class StateDataReporter(object):
     written in comma-separated-value (CSV) format, but you can specify a different separator to use.
     """
 
-    def __init__(self, file, reportInterval, pressure_tensor=False, append=False, volume=0):
+    def __init__(self, file, reportInterval, pressure_tensor=False, append=False, volume=None, masses=None):
         """Create a StateDataReporter.
 
         Parameters
@@ -85,7 +87,7 @@ class StateDataReporter(object):
         self._openedFile = isinstance(file, str)
         if self._openedFile:
             if file.endswith('.npy'):
-                if append:
+                if append and os.path.isfile(file):
                     self._pressure = np.load(file).tolist()
                 else:
                     self._pressure = []
@@ -96,10 +98,11 @@ class StateDataReporter(object):
             self._out = file
         self._hasInitialized = False
         self._volume = volume
+        self._masses = masses
         self._needsPositions = True
         self._needsVelocities = False
-        self._needsForces = True
-        self._needEnergy = True
+        self._needsForces = False
+        self._needEnergy = False
         self._includes = ['energy'] if self._needEnergy else []
 
     def describeNextReport(self, simulation):
@@ -142,15 +145,38 @@ class StateDataReporter(object):
         context : mm.Context
         state : mm.State
         '''
+
+        energies = []
+        #for axis in ['xx','xy','xz','yy','yz','zz']:
+        for axis in ['xx','yy','zz']:
+            energies.append(context.getIntegrator().getGlobalVariableByName(f'k_{axis:s}')/3)
+
         positions = state.getPositions(asNumpy=True)
-        forces = state.getForces(asNumpy=True)
 
-        p_kinetic = 2 * state.getKineticEnergy()
+        box = state.getPeriodicBoxVectors(asNumpy=True)
 
-        p_virial = np.einsum('ij,ik->jk', positions, forces)[[0, 0, 0, 1, 1, 2],[0, 1, 2, 1, 2, 2]]
+        scale_array = np.eye(3,dtype=np.float64)
 
-        return p_kinetic / unit.kilojoules_per_mole + p_virial
+        scale = 1e-4
+        #for k,(i,j) in enumerate([(0, 0), (1, 0), (2, 0), (1, 1), (2, 1), (2, 2)]):
+        for k,(i,j) in enumerate([(0, 0), (1, 1), (2, 2)]):
+            scale_array[i,j] += scale
+            context.setPeriodicBoxVectors(*(box*scale_array))
+            context.setPositions(np.dot(positions, scale_array))
+            U_plus = context.getState(getEnergy=True).getPotentialEnergy()
+            scale_array[i,j] -= 2*scale
+            context.setPeriodicBoxVectors(*(box*scale_array))
+            context.setPositions(np.dot(positions, scale_array))
+            U_minus = context.getState(getEnergy=True).getPotentialEnergy()
+            scale_array[i,j] += scale
+            virial = - (U_plus - U_minus) / 2 / scale
+            energies[k] += virial / unit.kilojoules_per_mole
+
+        context.setPeriodicBoxVectors(*box)
+        context.setPositions(positions)
+
+        return energies
 
     def __del__(self):
         if self._openedFile:
-            np.save(self._out,np.asarray(self._pressure)/3/self._volume*100/6.02214076)
+            np.save(self._out,np.asarray(self._pressure))
