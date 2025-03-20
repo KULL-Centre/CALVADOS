@@ -13,18 +13,6 @@ config = Config(
   pH = 7.0,
   topol = 'slab',
 
-  # RESTRAINTS
-  restraint_type = 'harmonic', # harmonic or go
-  use_com = True, # apply on centers of mass instead of CA
-  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
-  k_harmonic = 700., # Restraint force constant
-
-  # INPUT
-  ffasta = f'{cwd}/test.fasta', # input fasta file
-  fresidues = f'{cwd}/residues_C3.csv', # residue definitions
-  fdomains = f'{cwd}/domains.yaml', # domain definitions (harmonic restraints)
-  pdb_folder = f'{cwd}/pdbs', # directory for pdb and PAE files
-
   # RUNTIME SETTINGS
   wfreq = 1000, # dcd writing frequency, 1 = 10fs
   steps = 100000, # number of simulation steps
@@ -32,6 +20,7 @@ config = Config(
   platform = 'CPU', # 'CUDA'
   restart = None,
   verbose = True,
+  threads = 1,
 )
 
 job = Job(
@@ -52,8 +41,18 @@ components = Components(
   molecule_type = 'protein',
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
+  restraint_type = 'harmonic',
   charge_termini = 'both', # charge N or C or both
+  use_com = True, # center-of-mass (only if read from PDB)
+  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
+  k_harmonic = 700., # Restraint force constant
+  # INPUT
+  ffasta = f'{cwd}/test.fasta', # input fasta file
+  fresidues = f'{cwd}/residues_C3.csv', # residue definitions
+  pdb_folder = f'{cwd}/pdbs', # directory for pdb and PAE files
+  fdomains = f'{cwd}/domains.yaml', # domain definitions (harmonic restraints)
 )
+
 components.add(name='hSUMO_hnRNPA1S', nmol=1, restraint=True)
 components.add(name='Gal3', nmol=5, charge_termini='C')
 

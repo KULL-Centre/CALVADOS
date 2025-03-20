@@ -1,0 +1,15 @@
+sphinx-rtd-theme
+numpy
+pandas
+OpenMM
+MDAnalysis
+biopython
+Jinja2
+tqdm
+matplotlib
+PyYAML
+statsmodels
+localcider
+numba
+mdtraj
+scipy

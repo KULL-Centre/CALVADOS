@@ -34,7 +34,7 @@ class Config:
         """ Load default config. """
         with open(f'{pkg_base}/data/default_config.yaml','r') as stream:
             default_config = yaml.safe_load(stream)
-        default_config['fresidues'] = f'{pkg_base}/data/residues.csv'
+        # default_config['fresidues'] = f'{pkg_base}/data/residues.csv'
         return default_config
 
     @staticmethod

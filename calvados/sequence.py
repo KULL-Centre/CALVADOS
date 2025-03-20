@@ -86,46 +86,45 @@ def record_from_seq(seq,name):
 
 ### SEQUENCE ANALYSIS
 
-def get_qs(seq,flexhis=False,pH=7,calvados_version=2,residues=[]):
+def get_qs(seq,flexhis=False,pH=7,residues=[]):
     """ charges and absolute charges vs. residues """
+    qcoeff = 1.
     qs = []
     # scaled charges
-    if calvados_version == 4:
-        qcoeff = 0.75
+    if len(residues) == 0:
+        qs, qs_abs = get_qs_fast(seq,flexhis=flexhis,pH=pH)
     else:
-        qcoeff = 1.
-    if len(residues) > 0: # residue charges provided
         for s in seq:
             if flexhis and s == 'H':
                 q = qcoeff / ( 1 + 10**(pH-6) )
             else:
                 q = residues.loc[s].q
             qs.append(q)
-    else: # guess residue charges
-        # histidines
-        if flexhis:
-            qhis = qcoeff / ( 1 + 10**(pH-6) )
-        else:
-            qhis = 0.
-        # loop through sequence
-        for s in seq:
-            if s in ['R','K']:
-                qs.append(qcoeff)
-            elif s in ['E','D']:
-                qs.append(-1.*qcoeff)
-            elif s == 'H':
-                qs.append(qhis)
-            else:
-                qs.append(0.)
-    qs = np.asarray(qs).astype(float)
-    qs_abs = np.abs(qs)
+        qs = np.asarray(qs).astype(float)
+        qs_abs = np.abs(qs)
     return qs, qs_abs
 
-def frac_charges(qs):
-    N = len(qs)
-    fpos = np.sum(np.where(qs>0, 1, 0)) / N
-    fneg = np.sum(np.where(qs<0, 1, 0)) / N
-    return fpos, fneg
+@nb.jit(nopython=True)
+def get_qs_fast(seq,flexhis=False,pH=7.):
+    """ charges and absolute charges vs. residues """
+    qs = np.zeros(len(seq))
+    qs_abs = np.zeros(len(seq))
+
+    # loop through sequence
+    for idx in range(len(seq)):
+        if seq[idx] in ['R','K']:
+            qs[idx] = 1.
+            qs_abs[idx] = 1.
+        elif seq[idx] in ['E','D','p']:
+            qs[idx] = -1.
+            qs_abs[idx] = 1.
+        elif (seq[idx] == 'H') and flexhis:
+            qs[idx] = 1. / ( 1 + 10**(pH-6) )
+            qs_abs[idx] = 1. / ( 1 + 10**(pH-6) )
+        else:
+            qs[idx] = 0.
+            qs_abs[idx] = 0.
+    return qs, qs_abs
 
 def patch_terminal_qs(qs,n_termini,c_termini,loc='both'):
     qsnew = qs.copy()
@@ -161,14 +160,26 @@ def seq_com(qs_abs):
         com = len(qs_abs) // 2
     return com
 
+# @nb.jit(nopython=True)
+# def calc_SCD(seq,charge_termini=False):
+#     """ Sequence charge decoration, eq. 14 in Sawle & Ghosh, JCP 2015 """
+#     qs, _ = get_qs_fast(seq)
+#     if charge_termini:
+#         qs[0] = qs[0] + 1.
+#         qs[-1] = qs[-1] - 1.
+#     N = len(seq)
+#     scd = 0.
+#     for idx in range(1,N):
+#         for jdx in range(0,idx):
+#             s = qs[idx] * qs[jdx] * (idx - jdx)**0.5
+#             scd = scd + s
+#     scd = scd / N
+#     return scd
+
 @nb.jit(nopython=True)
-def calc_SCD(seq,charge_termini=False):
+def calc_SCD(qs):
     """ Sequence charge decoration, eq. 14 in Sawle & Ghosh, JCP 2015 """
-    qs, _ = get_qs_fast(seq)
-    if charge_termini:
-        qs[0] = qs[0] + 1.
-        qs[-1] = qs[-1] - 1.
-    N = len(seq)
+    N = len(qs)
     scd = 0.
     for idx in range(1,N):
         for jdx in range(0,idx):
@@ -258,68 +269,6 @@ def split_seq(seq):
     seqneg = shuffle_str(seqneg)
     seqneu = shuffle_str(seqneu)
     return seqpos, seqneg, seqneu
-
-def mc_towards_kappa(seq,k_target=0.2,nsteps=100,dip_target=0.,a_kappa=1.,a_dip=1.,nswaps=1,
-                    dipmax=0.):
-    seq = "".join(seq)
-    # clump charges
-    k0 = calc_kappa(seq)
-    print('-----------')
-    if k_target >= 0.3:
-        print('Calculating deltamax')
-        seq = construct_deltamax(seq)
-    else:
-        print('Start from original seq')
-    # print(seq)
-    k0 = calc_kappa(seq)
-    print('k before optimizing: ',f'{k0:.2f}')
-    u0_k = k_energy(k0,k_target,a_kappa=a_kappa)
-    u0_dip = dip_energy(seq,dip_target,a_dip=a_dip,dipmax=dipmax)
-    u0 = u0_k + u0_dip
-    # print(u0_k, u0_dip)
-    # MC
-    # print('-----------')
-    print('RUNNING MC')
-    # print(u0, seq)
-    nacc = 0.
-    nrej = 0.
-    us = np.zeros((nsteps))
-    ks = np.zeros((nsteps))
-    dips = np.zeros((nsteps))
-    umin = 10000.
-    for idx in tqdm(range(nsteps)):
-        seqtemp = seq
-        cswp = False
-        for i in range(nswaps):
-            seqtemp, charge_swap = trial_move(seqtemp)
-            if charge_swap:
-                cswp = True
-        if cswp:
-            k1 = calc_kappa(seqtemp)
-            u1_k = k_energy(k1,k_target,a_kappa=a_kappa)
-            u1_dip = dip_energy(seqtemp,dip_target,a_dip=a_dip,dipmax=dipmax)
-            # print(u1_k, u1_dip)
-            u1 = u1_k + u1_dip
-            accept = metropolis(u0,u1,a=10*len(seq))
-        else: # k should be identical for neutral swaps
-            k1 = k0
-            u1 = u0
-            accept = True
-        if accept:
-            nacc += 1
-            seq = seqtemp
-            k0 = k1
-            u0 = u1
-        else:
-            nrej += 1
-        ks[idx] = k0
-        us[idx] = u0
-        com, dip = seq_dipole(seq)
-        dips[idx] = dip
-        if u0 < umin:
-            umin = u0
-            seqmin = seq
-    return seqmin, nacc/(nacc+nrej), us, ks, dips
 
 def single_swap(seq):
     seq = list(seq)
@@ -697,8 +646,8 @@ def construct_deltamax(seq):
         seqmax = calc_case3(seqpos,seqneg,seqneu)
     return seqmax
 
-def calc_kappa_manual(seq):
-    qs, qs_abs = get_qs_fast(seq)
+def calc_kappa_manual(seq,residues=[]):
+    qs, qs_abs = get_qs(seq,residues=residues,flexhis=False)
     if np.sum(qs_abs) == 0:
         return -1
     else:
@@ -741,9 +690,9 @@ def frac_charges(qs):
     fpos = 0.
     fneg = 0.
     for idx in range(N):
-        if qs[idx] > 0:
+        if qs[idx] >= 1:
             fpos = fpos + 1.
-        elif qs[idx] < 0:
+        elif qs[idx] <= -1:
             fneg = fneg + 1.
     fpos = fpos / N
     fneg = fneg / N
@@ -759,31 +708,15 @@ def calc_sigma(qs):
     else:
         return ncpr**2 / fcr
 
-@nb.jit(nopython=True)
-def get_qs_fast(seq):
-    """ charges and absolute charges vs. residues """
-    qs = np.zeros(len(seq))
-    qs_abs = np.zeros(len(seq))
-
-    # loop through sequence
-    for idx in range(len(seq)):
-        if seq[idx] in ['R','K']:
-            qs[idx] = 1.
-            qs_abs[idx] = 1.
-        elif seq[idx] in ['E','D']:
-            qs[idx] = -1.
-            qs_abs[idx] = 1.
-        else:
-            qs[idx] = 0.
-            qs_abs[idx] = 0.
-    return qs, qs_abs
-
 class SeqFeatures:
     def __init__(self,seq,residues=None,charge_termini=False,calc_dip=False,
-    nu_file=None,ah_intgrl_map=None,lambda_map=None):
+    nu_file=None,ah_intgrl_map=None,lambda_map=None,flexhis=False,pH=7.):
         self.seq = seq
         self.N = len(seq)
-        self.qs, self.qs_abs = get_qs_fast(seq)
+        if flexhis:
+            self.qs, self.qs_abs = get_qs(seq,flexhis=flexhis,pH=pH,residues=residues)
+        else:
+            self.qs, self.qs_abs = get_qs(seq,residues=residues)
         if charge_termini:
             self.qs[0] += 1.
             self.qs[-1] -= 1.
@@ -791,7 +724,7 @@ class SeqFeatures:
         self.fpos, self.fneg = frac_charges(self.qs)
         self.ncpr = self.charge / self.N
         self.fcr = self.fpos+self.fneg
-        self.scd = calc_SCD(seq,charge_termini=charge_termini)
+        self.scd = calc_SCD(self.qs)
         self.rY, self.rF, self.rW = calc_aromatics(seq)
         self.faro = self.rY + self.rF + self.rW
 
@@ -812,14 +745,22 @@ class SeqFeatures:
                 ah_intgrl_map = make_ah_intgrl_map(residues)
             self.ah_ij = calc_ah_ij(seq,ah_intgrl_map)
 
-            q_intgrl_map = make_q_intgrl_map(residues)
-            self.q_ij = calc_q_ij(seq,q_intgrl_map)
+            # q_intgrl_map = make_q_intgrl_map(residues)
+            # self.q_ij = calc_q_ij(seq,q_intgrl_map)
             
         if nu_file is not None:
-            self.kappa = calc_kappa_manual(seq)
+            self.kappa = calc_kappa_manual(seq,residues=residues)
             if self.kappa == -1: # no charges
                 self.kappa = 0.
-            feats_for_nu = [self.scd, self.shd, self.kappa, self.fcr, self.mean_lambda]
+            if flexhis:
+                self.qs_noflex, _ = get_qs(seq,residues=residues,flexhis=False)
+                if charge_termini:
+                    self.qs_noflex[0] += 1.
+                    self.qs_noflex[-1] -= 1.
+                self.scd_noflex = calc_SCD(self.qs_noflex)
+            else:
+                self.scd_noflex = self.scd
+            feats_for_nu = [self.scd_noflex, self.shd, self.kappa, self.fcr, self.mean_lambda]
             model_nu = load(nu_file)
             X_nu = np.reshape(np.array(feats_for_nu),(1,-1))
             self.nu_svr = model_nu.predict(X_nu)[0]

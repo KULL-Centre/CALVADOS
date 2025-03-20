@@ -16,7 +16,7 @@ sysname = f'{args.name:s}'
 L = 30
 
 # set the saving interval (number of integration steps)
-N_save = 7000
+N_save = 1000
 
 # set final number of frames to save
 N_frames = 1000
@@ -27,21 +27,10 @@ config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
-  temp = 293.15, # K
+  temp = 293, # K
   ionic = 0.15, # molar
-  pH = 7.5,
+  pH = 7.0,
   topol = 'center',
-
-  # RESTRAINTS
-  restraint_type = 'harmonic', # harmonic or go
-  use_com = True, # apply on centers of mass instead of CA
-  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
-  k_harmonic = 700., # Restraint force constant
-
-  # INPUT
-  fresidues = residues_file, # residue definitions
-  fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
-  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
@@ -51,9 +40,6 @@ config = Config(
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
-
-  # JOB SETTINGS (ignore if running locally)
-  submit = False
 )
 
 # PATH
@@ -63,9 +49,9 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import save_rg
+from calvados.analysis import save_conf_prop
 
-save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
+save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path=f"{cwd}/data",start=100,is_idr=False,select='all')
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
@@ -76,6 +62,17 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = True, # apply restraints
   charge_termini = 'both', # charge N or C or both
+
+  # INPUT
+  fresidues = residues_file, # residue definitions
+  fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
+  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
+
+  # RESTRAINTS
+  restraint_type = 'harmonic', # harmonic or go
+  use_com = True, # apply on centers of mass instead of CA
+  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
+  k_harmonic = 700., # Restraint force constant
 )
 components.add(name=args.name)
 
