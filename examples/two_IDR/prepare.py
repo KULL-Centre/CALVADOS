@@ -52,8 +52,9 @@ analyses = f"""
 
 from calvados.analysis import calc_com_traj, calc_contact_map
 
-calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",list_chainids=[[0],[1]])
-calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",prot_1_chainids=[0],prot_2_chainids=[1])
+chainid_dict = dict({args.name_1:s} = 0, {args.name_2:s} = 1)
+calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict)
+calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",chainid_dict=chainid_dict)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)

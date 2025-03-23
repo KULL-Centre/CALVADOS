@@ -58,8 +58,10 @@ slab.calc_profiles()
 slab.calc_concentrations()
 print(slab.df_results)
 slab.plot_density_profiles()
-calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",list_chainids=[np.arange(100)])
-calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",prot_1_chainids=np.arange(100),prot_2_chainids=np.arange(100),in_slab=True)
+
+chainid_dict = dict({sysname:s} = (0,99))
+calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict)
+calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",chainid_dict=chainid_dict,is_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
