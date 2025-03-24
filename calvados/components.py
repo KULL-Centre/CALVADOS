@@ -168,14 +168,19 @@ class Protein(Component):
         else:
             self.calc_x_setup(comp_setup = comp_setup)
 
-    def calc_bondlength(self, i, j):
+    def calc_bondlength(self, i, j, min_bscale = 0.05, max_bscale = 0.95):
         d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
         if self.restraint:
             if self.restraint_type == 'harmonic':
                 ss = build.check_ssdomain(self.ssdomains,i,j,req_both=False)
                 d = self.dmap[i,j] if ss else d0
             elif self.restraint_type == 'go':
-                d = self.bondscale[i,j] * d0 + (1. - self.bondscale[i,j]) * self.dmap[i,j]
+                if self.bondscale[i,j] > max_bscale:
+                    d = d0
+                elif self.bondscale[i,j] < min_bscale:
+                    d = self.dmap[i,j]
+                else:
+                    d = self.bondscale[i,j] * d0 + (1. - self.bondscale[i,j]) * self.dmap[i,j]
             else:
                 raise ValueError("Restraint type must be harmonic or go.")
         else:
@@ -228,7 +233,6 @@ class Protein(Component):
                 # go
                 elif self.restraint_type == 'go':
                     if self.bondscale[i,j] > max_bscale:
-                    # if self.scale[i,j] < min_scale:
                         continue
                     k = self.k_go * self.scale[i,j]
                     # add scaled pseudo LJ, YU for low restraints
