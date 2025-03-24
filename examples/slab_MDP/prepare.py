@@ -47,7 +47,6 @@ subprocess.run(f'mkdir -p {path}',shell=True)
 subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
-
 from calvados.analysis import SlabAnalysis, calc_com_traj, calc_contact_map
 
 slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
@@ -60,8 +59,8 @@ print(slab.df_results)
 slab.plot_density_profiles()
 
 chainid_dict = dict({sysname:s} = (0,99))
-calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict)
-calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",chainid_dict=chainid_dict,is_slab=True)
+calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict)
+calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",chainid_dict=chainid_dict,is_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)

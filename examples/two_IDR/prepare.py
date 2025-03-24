@@ -20,7 +20,7 @@ L = 10
 N_save = 1000
 
 # set final number of frames to save
-N_frames = 1
+N_frames = 1000
 
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 
@@ -49,12 +49,11 @@ subprocess.run(f'mkdir -p {path}',shell=True)
 subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
-
 from calvados.analysis import calc_com_traj, calc_contact_map
 
 chainid_dict = dict({args.name_1:s} = 0, {args.name_2:s} = 1)
-calc_com_traj(path="{path:s}",name="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict)
-calc_contact_map(path="{path:s}",name="{sysname:s}",output_path="data",chainid_dict=chainid_dict)
+calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict)
+calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",chainid_dict=chainid_dict)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)

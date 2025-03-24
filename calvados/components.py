@@ -485,7 +485,7 @@ class Crowder(Component):
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Crowder properties. """
 
-        super().calc_properties(pH=pH, verbose=verbose, comp_setup=comp_setup)
+        super().calc_properties(pH=pH, verbose=verbose)
         self.calc_x_setup(comp_setup=comp_setup) # can be overwritten in custom component
 
     @staticmethod

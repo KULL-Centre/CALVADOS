@@ -200,7 +200,7 @@ class Sim:
                 # add restraints towards box center
                 if (self.slab_eq or self.ext_force) and comp.ext_restraint:
                     self.add_ext_restraints(comp)
-        
+
         if self.custom_restraints:
             self.map_custom_restraints()
             self.add_custom_restraints()
@@ -243,7 +243,7 @@ class Sim:
         # Custom forces
         if self.custom_restraints:
             self.system.addForce(self.cres)
-        
+
         # Barostat force
         if self.box_eq:
             barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
@@ -251,7 +251,7 @@ class Sim:
                     self.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
                     self.boxscaling_xyz[2],1000)
             self.system.addForce(barostat)
-        
+
         # Bilayer eq. force
         if self.bilayer_eq:
             barostat = openmm.openmm.MonteCarloMembraneBarostat(self.pressure[0]*unit.bar,
@@ -436,8 +436,8 @@ class Sim:
                         self.top.add_bond(chain.atom(i), chain.atom(j))
         else:
             for idx,resname in enumerate(comp.seq):
-                if comp.molecule_type == 'protein':
-                    resname = str(seq3(resname)).upper()
+                if comp.molecule_type in ['protein','crowder']:
+                    resname = comp.residues.loc[resname,'three']
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom('CA', element=md.element.carbon, residue=res)
             for i in range(chain.n_atoms-1):
