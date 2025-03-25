@@ -14,7 +14,7 @@ cwd = os.getcwd()
 sysname = f'{args.name_1:s}_{args.name_2:s}'
 
 # set the side length of the cubic box
-L = 20
+L = 30
 
 # set the saving interval (number of integration steps)
 N_save = 1000
@@ -22,7 +22,7 @@ N_save = 1000
 # set final number of frames to save
 N_frames = 1000
 
-residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
+residues_file = f'{cwd}/input/residues_CALVADOS3.csv'
 
 config = Config(
   # GENERAL
@@ -52,7 +52,7 @@ analyses = f"""
 from calvados.analysis import calc_com_traj, calc_contact_map
 
 chainid_dict = dict({args.name_1:s} = 0, {args.name_2:s} = 1)
-calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict,start=10)
+calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="data",residues_file="{residues_file:s}",chainid_dict=chainid_dict,start=100)
 calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",chainid_dict=chainid_dict)
 """
 
@@ -62,15 +62,23 @@ components = Components(
   # Defaults
   molecule_type = 'protein',
   nmol = 1, # number of molecules
-  restraint = False, # apply restraints
+  restraint = True, # apply restraints
   charge_termini = 'both', # charge N or C or both
 
   # INPUT
   fresidues = residues_file, # residue definitions
   ffasta = f'{cwd}/input/idr.fasta', # residue definitions
+  fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
+  pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
+
+  # RESTRAINTS
+  restraint_type = 'harmonic', # harmonic or go
+  use_com = True, # apply on centers of mass instead of CA
+  colabfold = 1, # PAE format (EBI AF=0, Colabfold=1&2)
+  k_harmonic = 700., # Restraint force constant
 )
 
-components.add(name=args.name_1)
+components.add(name=args.name_1, restraint=False, use_com=False)
 components.add(name=args.name_2)
 
 components.write(path,name='components.yaml')

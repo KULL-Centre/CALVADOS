@@ -81,7 +81,7 @@ class Components:
         """ Write component file. """
         self.name = name
         with open(f'{path}/{name}','w') as stream:
-            yaml.dump(self.components,stream)
+            yaml.dump(self.components,stream,sort_keys=False)
 
     @staticmethod
     def load_default_component(pkg_base,defaults):

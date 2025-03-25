@@ -1,4 +1,4 @@
-The lines below run simulations of a single IDR:
+The lines below run simulations of two different IDRs:
 
 ```bash
 python prepare.py --name_1 <name protein 1> --name_2 <name protein 2>
