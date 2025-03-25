@@ -144,6 +144,23 @@ class Protein(Component):
         self.scale = bfac_sigm * pae_sigm # restraint scale
         # self.bondscale = np.minimum(1.,np.maximum(0, 1. - 10.* (self.scale - min_scale))) # residual interactions for low restraints
         self.bondscale = np.exp(-bscale_width*(self.scale-bscale_shift)) / (np.exp(-bscale_width*(self.scale-bscale_shift)) + 1)
+        self.curate_bondscale()
+
+    def curate_bondscale(self, max_bscale = 0.95):
+        for idx in range(self.nbeads):
+            for jdx in range(self.nbeads):
+                lower = self.bondscale[idx,:jdx-3]
+                higher = self.bondscale[idx,jdx+4:]
+                if jdx <= 3:
+                    others = higher
+                elif jdx >= self.nbeads - 4:
+                    others = lower
+                else:
+                    others = np.concatenate([lower, higher])
+                count = np.sum(np.where(others < max_bscale,1,0)) # count how many nonlocal restraints
+                # print(idx,jdx,count)
+                if count == 0:
+                    self.bondscale[idx,jdx] = 1 # don't restrain if only local
 
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
@@ -185,6 +202,7 @@ class Protein(Component):
                 raise ValueError("Restraint type must be harmonic or go.")
         else:
             d = d0
+        # print(i,j,self.bondscale[i,j],d0,d)
         return d
 
     def bond_check(self, i: int, j: int):
