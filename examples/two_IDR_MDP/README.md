@@ -16,3 +16,14 @@ Tau35_TIA1_Tau35_TIA1_cmap.npy # Tau35-TIA1 contact map
 Tau35_TIA1_Tau35_rg.npy # per-frame Rg's of Tau35
 Tau35_TIA1_TIA1_rg.npy # per-frame Rg's of TIA1
 ```
+
+Trajectory of the centers of mass can be used to calculate the radial distribution function and the second virial coefficient
+
+```python
+import mdtraj as md
+import numpy as np
+
+t = md.load('data/com_traj.dcd',top='data/com_top.pdb')
+r,rdf = md.compute_rdf(t,pairs=[[0,1]],r_range=(.5,15),bin_width=.1)
+b22 = -2*np.pi*np.trapz((rdf-1)*r*r,r)
+```

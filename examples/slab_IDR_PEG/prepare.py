@@ -69,17 +69,17 @@ subprocess.run(f'mkdir -p data',shell=True)
 analyses = f"""
 from calvados.analysis import SlabAnalysis, calc_com_traj, calc_contact_map
 
-#slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
-#                    output_path="data",
-#                    ref_name = "A1", ref_chains = (0, 99),
-#                    client_names = ["PEG{args.mw:d}"], client_chain_list = [(100,{99+N_PEG:d})],
-#                    verbose=True)
+slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
+                    output_path="data",
+                    ref_name = "A1", ref_chains = (0, 99),
+                    client_names = ["PEG{args.mw:d}"], client_chain_list = [(100,{99+N_PEG:d})],
+                    verbose=True)
 
-#slab.center(start=0, center_target='ref') # center_target='ref' for centering only on A1
-#slab.calc_profiles()
-#slab.calc_concentrations()
-#print(slab.df_results)
-#slab.plot_density_profiles()
+slab.center(start=0, center_target='ref') # center_target='ref' for centering only on A1
+slab.calc_profiles()
+slab.calc_concentrations()
+print(slab.df_results)
+slab.plot_density_profiles()
 
 # homotypic cmap
 chainid_dict = dict(A1 = (0,99))
