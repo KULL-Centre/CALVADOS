@@ -148,19 +148,20 @@ class Protein(Component):
 
     def curate_bondscale(self, max_bscale = 0.95):
         for idx in range(self.nbeads):
-            for jdx in range(self.nbeads):
-                lower = self.bondscale[idx,:jdx-3]
-                higher = self.bondscale[idx,jdx+4:]
-                if jdx <= 3:
-                    others = higher
-                elif jdx >= self.nbeads - 4:
-                    others = lower
-                else:
-                    others = np.concatenate([lower, higher])
-                count = np.sum(np.where(others < max_bscale,1,0)) # count how many nonlocal restraints
-                # print(idx,jdx,count)
-                if count == 0:
-                    self.bondscale[idx,jdx] = 1 # don't restrain if only local
+            lower = self.bondscale[idx,:idx-3]
+            higher = self.bondscale[idx,idx+4:]
+            if idx <= 3:
+                others = higher
+            elif idx >= self.nbeads - 4:
+                others = lower
+            else:
+                others = np.concatenate([lower, higher])
+            count = np.sum(np.where(others < max_bscale,1,0)) # count how many nonlocal restraints
+            # print(idx,count)
+            if count == 0:
+                for jdx in range(max(0,idx-3),min(self.nbeads,idx+4)):
+                    self.bondscale[idx,jdx] = 1 # remove local restraints
+                    self.bondscale[jdx,idx] = 1 # remove local restraints
 
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
