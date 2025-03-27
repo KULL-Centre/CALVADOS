@@ -519,6 +519,7 @@ class SlabAnalysis:
         # Reference profile
         h_ref = np.zeros((n_frames,self.n_bins))
         for t,ts in enumerate(u.trajectory[start:end:step]):
+            ts = transformations.wrap(ag_ref)(ts)
             zpos = ag_ref.positions.T[2]
             h, e = np.histogram(zpos,bins=self.edges)
             h_ref[t] = h * conv_ref # mM
