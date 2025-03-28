@@ -5,13 +5,13 @@ from MDAnalysis import transformations
 
 from tqdm import tqdm
 
-def center_traj(pdb,traj):
+def center_traj(pdb,traj,start=None,stop=None,step=1):
     """ center trajectory """
   
     u = mda.Universe(pdb,traj)
     
     with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
-        for ts in u.trajectory:
+        for ts in u.trajectory[start:stop:step]:
             u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
             W.write(u.atoms)
 
