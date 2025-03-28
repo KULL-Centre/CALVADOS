@@ -1,5 +1,4 @@
 import os
-import calvados as cal
 from calvados.cfg import Config, Job, Components
 import subprocess
 import numpy as np
@@ -8,11 +7,13 @@ from Bio import SeqIO
 
 parser = ArgumentParser()
 parser.add_argument('--name',nargs='?',required=True,type=str)
+parser.add_argument('--gpu_id',nargs='?',required=True,type=int)
 parser.add_argument('--replica',nargs='?',required=True,type=int)
 args = parser.parse_args()
 
 cwd = os.getcwd()
 N_save = int(5e4)
+N_frames = 4400
 
 sysname = f'{args.name:s}_{args.replica:d}'
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
@@ -22,42 +23,46 @@ config = Config(
   sysname = sysname, # name of simulation system
   box = [15, 15, 150.], # nm
   temp = 293,
-  ionic = 0.1, # molar
-  pH = 7.5,
+  ionic = 0.15, # molar
+  pH = 7,
   topol = 'slab',
+  friction = 0.01,
+
+  # INPUT
+  ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
+  fresidues = f'{cwd}/input/residues.csv', # residue definitions
 
   # RUNTIME SETTINGS
+  gpu_id = args.gpu_id,
   wfreq = N_save, # dcd writing frequency, 1 = 10fs
-  steps = 12000*N_save, # number of simulation steps
+  steps = N_frames*N_save, # number of simulation steps
   runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CUDA', # 'CUDA'
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
   slab_eq = True,
-  steps_eq = 100*N_save,
+  steps_eq = 1000*N_save,
 )
 
 # PATH
 path = f'{cwd}/{sysname}'
+output_path = f'{path}/data'
 subprocess.run(f'mkdir -p {path}',shell=True)
-subprocess.run(f'mkdir -p data',shell=True)
+subprocess.run(f'mkdir -p {output_path}',shell=True)
 
 analyses = f"""
 from calvados.analysis import SlabAnalysis, calc_com_traj, calc_contact_map
 
 slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
-  output_path="data", ref_name="{sysname:s}", verbose=True)
+                    output_path="{output_path:s}", ref_name="{sysname:s}", verbose=True)
 
-slab.center(start=0, center_target='all')
+slab.center(start=400, center_target='all')
 slab.calc_profiles()
 slab.calc_concentrations()
-print(slab.df_results)
 slab.plot_density_profiles()
-
-# homotypic cmap
-calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="data",residues_file="{residues_file:s}")
-calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",is_slab=True)
+calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="{output_path:s}",residues_file="{residues_file:s}")
+calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="{output_path:s}",is_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
@@ -67,15 +72,14 @@ components = Components(
   molecule_type = 'protein',
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
-  ext_restraint = False, # apply external restraints
-  charge_termini = 'both', # charge N or C or both or none
+  charge_termini = 'both', # charge N, C, both or none (end-capped)
 
   # INPUT
   ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
   fresidues = residues_file, # residue definitions
 )
 
-components.add(name=args.name, ext_restraint=True, nmol=100)
+components.add(name=args.name, nmol=100)
 
 components.write(path,name='components.yaml')
 

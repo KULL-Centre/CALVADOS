@@ -10,8 +10,8 @@ where `<name protein 1>` (Tau35) is an IDR and `<name protein 2>` (TIA1) is an M
 After running the simulation, the script analyses the trajectory and saves the following files in the `data` folder:
 
 ```bash
-com_traj.dcd # trajectory of the centers of mass
-com_top.pdb # pdb file of the centers of mass
+Tau35_TIA1_com_traj.dcd # trajectory of the centers of mass
+Tau35_TIA1_com_top.pdb # pdb file of the centers of mass
 Tau35_TIA1_Tau35_TIA1_cmap.npy # Tau35-TIA1 contact map
 Tau35_TIA1_Tau35_rg.npy # per-frame Rg's of Tau35
 Tau35_TIA1_TIA1_rg.npy # per-frame Rg's of TIA1

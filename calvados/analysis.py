@@ -810,7 +810,7 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=N
     traj.xyz -= traj.unitcell_lengths[0,:]/2
 
     if len(chainid_dict) == 0:
-        chainid_dict[sysname] = np.arange(0, traj.top.n_chains)
+        chainid_dict[sysname] = (0, traj.top.n_chains-1)
 
     residues = pd.read_csv(residues_file, index_col='three')
 
@@ -854,8 +854,8 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=N
         np.save(output_path+f'/{sysname:s}_{chain_name:s}_rg.npy',np.asarray(chain_prop[chain_name]['rgs']).T)
 
     # calculate radial distribution function
-    cmtraj[0].save_pdb(output_path+'/com_top.pdb')
-    cmtraj.save_dcd(output_path+'/com_traj.dcd')
+    cmtraj[0].save_pdb(output_path+f'/{sysname:s}_com_top.pdb')
+    cmtraj.save_dcd(output_path+f'/{sysname:s}_com_traj.dcd')
 
 def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,input_pdb='top.pdb'):
     """
@@ -885,38 +885,39 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
     traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
     traj.xyz -= traj.unitcell_lengths[0,:]/2
 
-    name_1 = next(iter(chainid_dict))
-    if type(chainid_dict[name_1]) is int:
-        chainid_dict[name_1] = (chainid_dict[name_1], chainid_dict[name_1])
-    chainid_dict[name_1] = np.arange(chainid_dict[name_1][0], chainid_dict[name_1][1]+1)
-    if len(chainid_dict) > 1:
-        name_2 = next(iter(list(chainid_dict.keys())[1:]))
-        if type(chainid_dict[name_2]) is int:
-            chainid_dict[name_2] = (chainid_dict[name_2], chainid_dict[name_2])
-        chainid_dict[name_2] = np.arange(chainid_dict[name_2][0], chainid_dict[name_2][1]+1)
-    elif len(chainid_dict) == 1:
-        # if homotypic cmap
-        name_2 = name_1
+    if len(chainid_dict) > 0:
+        name_1 = next(iter(chainid_dict))
+        if type(chainid_dict[name_1]) is int:
+            chainid_dict[name_1] = (chainid_dict[name_1], chainid_dict[name_1])
+        chainid_dict[name_1] = np.arange(chainid_dict[name_1][0], chainid_dict[name_1][1]+1)
+        if len(chainid_dict) > 1:
+            name_2 = next(iter(list(chainid_dict.keys())[1:]))
+            if type(chainid_dict[name_2]) is int:
+                chainid_dict[name_2] = (chainid_dict[name_2], chainid_dict[name_2])
+            chainid_dict[name_2] = np.arange(chainid_dict[name_2][0], chainid_dict[name_2][1]+1)
+        else:
+            # if homotypic cmap
+            name_2 = name_1
     else:
         name_1 = sysname
-        name_2 = sysname
-        chainid_dict[name_1] = np.arange(0, traj.top.n_chains)
-
-    if is_slab and not os.path.isfile(output_path+f'/{sysname:s}_ps_results.csv'):
-        raise ValueError('Please run functions in SlabAnalysis class first')
-    elif is_slab:
-        ps_results = pd.read_csv(output_path+f'/{sysname:s}_ps_results.csv',index_col=0).loc[f'{sysname:s}_{name_1:s}']
-        z_dil = 0.5*(np.abs(ps_results.cutoffs_dilute_left) + ps_results.cutoffs_dilute_right)
-        z_den = 0.5*(np.abs(ps_results.cutoffs_dense_left) + ps_results.cutoffs_dense_right)
-    if is_slab and not os.path.isfile(output_path+'/com_traj.dcd'):
-        raise ValueError('Please run calc_com_traj first')
-    elif is_slab:
-        cmtraj = md.load_dcd(output_path+'/com_traj.dcd',top=output_path+'/com_top.pdb')
+        name_2 = name_1
+        chainid_dict[name_1] = np.arange(traj.top.n_chains)
 
     N_res_1 = traj.top.chain(chainid_dict[name_1][0]).n_residues
     N_res_2 = traj.top.chain(chainid_dict[name_2][0]).n_residues
 
     if is_slab:
+        if not os.path.isfile(output_path+f'/{sysname:s}_ps_results.csv'):
+            raise ValueError('Please run functions in SlabAnalysis class first')
+        else:
+            ps_results = pd.read_csv(output_path+f'/{sysname:s}_ps_results.csv',index_col=0).loc[f'{sysname:s}_{name_1:s}']
+            z_dil = 0.5*(np.abs(ps_results.cutoffs_dilute_left) + ps_results.cutoffs_dilute_right)
+            z_den = 0.5*(np.abs(ps_results.cutoffs_dense_left) + ps_results.cutoffs_dense_right)
+        if not os.path.isfile(output_path+f'/{sysname:s}_com_traj.dcd'):
+            raise ValueError('Please run calc_com_traj first')
+        else:
+            cmtraj = md.load_dcd(output_path+f'/{sysname:s}_com_traj.dcd',top=output_path+f'/{sysname:s}_com_top.pdb')
+
         for chain_name, chainids in chainid_dict.items():
             cm_z = cmtraj.xyz[:,chainids,2]
             mask_den = np.abs(cm_z) < z_den
