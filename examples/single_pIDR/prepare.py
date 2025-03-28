@@ -29,10 +29,10 @@ residues_file = f'{cwd}/input/residues_pCALVADOS2.csv'
 
 # set charge on pSer and pThr based on input pH
 pKa_dict = dict(SEP=6.01, TPO=6.3)
-df_residues = pd.read_csv(residues_file,index_col=0)
+df_residues = pd.read_csv(residues_file,index_col='three')
 for pres in pKa_dict.keys():
     df_residues.loc[pres,'q'] = - 1 - 1 / (1 + 10**(pKa_dict[pres]-pH))
-df_residues.to_csv(residues_file)
+df_residues.reset_index().set_index('one').to_csv(residues_file)
 
 config = Config(
   # GENERAL
