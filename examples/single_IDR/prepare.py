@@ -13,7 +13,7 @@ cwd = os.getcwd()
 sysname = f'{args.name:s}'
 
 # set the side length of the cubic box
-L = 20
+L = 50
 
 # set the saving interval (number of integration steps)
 N_save = 7000
@@ -27,8 +27,8 @@ config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
-  temp = 293, # K
-  ionic = 0.15, # M
+  temp = 293.15, # K
+  ionic = 0.19, # M
   pH = 7.5,
   topol = 'center',
 
@@ -51,7 +51,7 @@ analyses = f"""
 
 from calvados.analysis import save_conf_prop
 
-save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path="data",start=100,is_idr=True,select='all')
+save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path="data",start=10,is_idr=True,select='all')
 """
 
 config.write(path,name='config.yaml',analyses=analyses)

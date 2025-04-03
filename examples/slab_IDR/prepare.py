@@ -13,7 +13,7 @@ args = parser.parse_args()
 
 cwd = os.getcwd()
 N_save = int(5e4)
-N_frames = 4400
+N_frames = 3000
 
 sysname = f'{args.name:s}_{args.replica:d}'
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
@@ -26,6 +26,7 @@ config = Config(
   ionic = 0.15, # molar
   pH = 7,
   topol = 'slab',
+  slab_width = 20,
   friction = 0.01,
 
   # INPUT
@@ -42,7 +43,7 @@ config = Config(
   frestart = 'restart.chk',
   verbose = True,
   slab_eq = True,
-  steps_eq = 1000*N_save,
+  steps_eq = 100*N_save,
 )
 
 # PATH
@@ -60,6 +61,7 @@ slab = SlabAnalysis(name="{sysname:s}", input_path="{path:s}",
 slab.center(start=400, center_target='all')
 slab.calc_profiles()
 slab.calc_concentrations()
+print(slab.df_results)
 slab.plot_density_profiles()
 calc_com_traj(path="{path:s}",sysname="{sysname:s}",output_path="{output_path:s}",residues_file="{residues_file:s}")
 calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="{output_path:s}",is_slab=True)
@@ -72,7 +74,7 @@ components = Components(
   molecule_type = 'protein',
   nmol = 1, # number of molecules
   restraint = False, # apply restraints
-  charge_termini = 'both', # charge N, C, both or none (end-capped)
+  charge_termini = 'both', # charge N or C or both
 
   # INPUT
   ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
