@@ -69,6 +69,12 @@ class Sim:
                 # Crowder component
                 comp_setup = 'spiral'
                 comp = RNA(name, properties, self.comp_defaults)
+            elif molecule_type == 'cyclic':
+                comp_setup = 'compact'
+                comp = Cyclic(name, properties, self.comp_defaults)
+            elif molecule_type == 'seastar':
+                comp_setup = 'compact'
+                comp = Seastar(name, properties, self.comp_defaults)
             else:
                 # Generic component
                 comp_setup = 'linear'
@@ -189,7 +195,7 @@ class Sim:
                 self.add_particles_system(comp.mws)
 
                 # add interactions + restraints
-                if comp.molecule_type in ['protein','crowder']:
+                if comp.molecule_type in ['protein','crowder','cyclic','seastar']:
                     xs = self.place_molecule(comp)
                 elif comp.molecule_type in ['lipid','cooke_lipid']:
                     xs = self.place_bilayer(comp)

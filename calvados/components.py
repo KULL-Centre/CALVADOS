@@ -494,3 +494,49 @@ class Crowder(Component):
 
         condition = (j == i+1)
         return condition
+
+class Cyclic(Protein):
+    """ Cyclic peptide. """
+
+    def __init__(self, name: str, comp_dict: dict, defaults: dict):
+        super().__init__(name, comp_dict, defaults)
+
+    def bond_check(self, i: int, j: int):
+        """ Define bonded term conditions. """
+
+        condition0 = (j == i+1)
+        condition1 = ((j == self.nbeads - 1) and i == 0)
+        condition = condition0 or condition1
+        return condition
+
+class Seastar(Protein):
+    """ Branched peptide. """
+
+    def __init__(self, name: str, comp_dict: dict, defaults: dict):
+        super().__init__(name, comp_dict, defaults)
+
+    def add_bonds(self, offset):
+        exclusion_map = [] # for ah, yu etc.
+        for i in range(0,self.nbeads-1):
+            for j in range(i, self.nbeads):
+                if self.bond_check(i,j):
+                    d = self.calc_bondlength(i, j)
+                    bidx = self.hb.addBond(
+                        i+offset, j+offset, d*unit.nanometer,
+                        self.kb*unit.kilojoules_per_mole/(unit.nanometer**2))
+                    self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,self.kb]) # 1-based
+                    exclusion_map.append([i+offset,j+offset])
+        return exclusion_map
+
+    def bond_check(self, i: int, j: int):
+        """ Define bonded term conditions. """
+
+        if self.n_ends in [0,1,2]:
+            return super().bond_check(i,j)
+        else:
+            condition0 = (j == i+1)
+            branch_length = int(self.nbeads / self.n_ends)
+            condition1 = (i == 0) and ((j-1) % branch_length == 0)
+
+            condition = condition0 or condition1
+            return condition
