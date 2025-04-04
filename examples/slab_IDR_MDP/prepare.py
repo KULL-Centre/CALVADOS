@@ -92,8 +92,8 @@ components = Components(
   k_harmonic = 700., # Restraint force constant
 )
 
-components.add(name=args.name_1, restraint=False, use_com=False)
-components.add(name=args.name_2)
+components.add(name=args.name_1, restraint=False, use_com=False) # no elastic network for IDR
+components.add(name=args.name_2, ext_restraint=False) # no slab equilibration for MDP
 
 components.write(path,name='components.yaml')
 

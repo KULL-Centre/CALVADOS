@@ -74,8 +74,8 @@ config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
-  restraint = False, # apply restraints
-  ext_restraint = False, # apply external restraints
+  restraint = False, # apply elastic network
+  ext_restraint = True, # apply external restraint (slab eq)
   charge_termini = 'both', # charge N or C or both
   fresidues = residues_file, # residue definitions
   ffasta = f'{cwd}/mix.fasta',
@@ -91,6 +91,6 @@ components = Components(
 )
 
 components.add(name='polyR30', molecule_type='rna', nmol=25)
-components.add(name='FUSRGG3', molecule_type='protein', ext_restraint=True, nmol=100)
+components.add(name='FUSRGG3', molecule_type='protein', nmol=100)
 components.write(path,name='components.yaml')
 

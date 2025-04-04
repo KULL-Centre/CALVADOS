@@ -98,5 +98,5 @@ components = Components(
 )
 
 components.add(name='A1', molecule_type='protein', nmol=100)
-components.add(name=f'PEG{args.mw:d}', molecule_type='crowder', nmol=N_PEG, charge_termini=False)
+components.add(name=f'PEG{args.mw:d}', molecule_type='crowder', nmol=N_PEG, charge_termini='none', ext_restraint=False)
 components.write(path,name='components.yaml')
