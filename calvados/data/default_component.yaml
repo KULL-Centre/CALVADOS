@@ -32,3 +32,6 @@ rna_nb_scale : 15
 rna_nb_cutoff : 0.6
 
 n_ends : 1
+
+ptm_name : 'example_ptm'
+ptm_locations : []

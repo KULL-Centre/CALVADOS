@@ -515,28 +515,60 @@ class Seastar(Protein):
     def __init__(self, name: str, comp_dict: dict, defaults: dict):
         super().__init__(name, comp_dict, defaults)
 
-    def add_bonds(self, offset):
-        exclusion_map = [] # for ah, yu etc.
-        for i in range(0,self.nbeads-1):
-            for j in range(i, self.nbeads):
-                if self.bond_check(i,j):
-                    d = self.calc_bondlength(i, j)
-                    bidx = self.hb.addBond(
-                        i+offset, j+offset, d*unit.nanometer,
-                        self.kb*unit.kilojoules_per_mole/(unit.nanometer**2))
-                    self.bond_pairlist.append([i+offset+1,j+offset+1,bidx,d,self.kb]) # 1-based
-                    exclusion_map.append([i+offset,j+offset])
-        return exclusion_map
-
     def bond_check(self, i: int, j: int):
         """ Define bonded term conditions. """
 
         if self.n_ends in [0,1,2]:
             return super().bond_check(i,j)
         else:
-            condition0 = (j == i+1)
-            branch_length = int(self.nbeads / self.n_ends)
+            if (self.nbeads-1) % self.n_ends == 0:
+                branch_length = int((self.nbeads-1) / self.n_ends)
+            else:
+                branch_length = int((self.nbeads-1) / self.n_ends) + 1
+
+            condition0 = (j == i+1) and ((j-1) % branch_length != 0)
             condition1 = (i == 0) and ((j-1) % branch_length == 0)
 
             condition = condition0 or condition1
             return condition
+
+class PTMProtein(Protein):
+    """ Branched peptide. """
+
+    def __init__(self, name: str, comp_dict: dict, defaults: dict):
+        super().__init__(name, comp_dict, defaults)
+
+    def calc_comp_seq(self):
+        """ Calculate sequence of Protein + PTM. """
+
+        records = read_fasta(self.ffasta)
+        self.seq = str(records[self.name].seq) # one bead seq
+        self.nbeads_protein = len(self.seq)
+        self.ptm_seq = str(records[self.ptm_name].seq)
+
+        for ptm_idx in self.ptm_locations: # 1-based
+            self.seq = self.seq + self.ptm_seq
+
+        self.n_termini = [0]
+        self.c_termini = [len(self.seq)-1]
+
+    def bond_check(self, i: int, j: int):
+        """ Define bonded term conditions. """
+
+        # residue-residue bond (protein)
+        if (i < self.nbeads_protein - 1) and (j == i+1):
+            return True
+        
+        ptm_seqlocs = []
+        # residue-PTM bond
+        for idx, ptm_loc in enumerate(self.ptm_locations):
+            ptm_seqloc = self.nbeads_protein + idx * len(self.ptm_seq) # position of connecting PTM bead in sequence
+            ptm_seqlocs.append(ptm_seqloc)
+            if (i == ptm_loc - 1) and (j == ptm_seqloc):
+                return True
+        
+        # PTM-PTM bond
+        if i >= self.nbeads_protein:
+            if (j == i+1) and (j not in ptm_seqlocs): # avoid bonding different PTMs
+                return True
+        return False
