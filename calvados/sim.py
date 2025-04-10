@@ -349,7 +349,6 @@ class Sim:
         # self.custom_restr_pairs = []
         self.cres = interactions.init_restraints(self.custom_restraint_type)
         for i, j, r, k in self.custom_restr_abs: # i, j, r, k
-            print(i,j,r,k)
             self.cres, restr_pair = interactions.add_single_restraint(
                 self.cres, self.custom_restraint_type, r, k, i, j)
             # self.custom_restr_pairs.append(restr_pair)
