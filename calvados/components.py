@@ -124,7 +124,7 @@ class Protein(Component):
         self.ssdomains = build.get_ssdomains(self.name,self.fdomains)
         # print(f'Setting {self.restraint_type} restraints for {comp.name}')
 
-    def calc_go_scale(self):#,
+    def calc_go_scale(self, bscale_shift = 0.1, bscale_width = 80):#,
             # pdb_folder: str, bfac_width: float = 50., bfac_shift: float = 0.8,
             # pae_width: float = 8., pae_shift: float = 0.4, colabfold: int = 0):
         """ Calculate scaling of Go potential for all residue pairs. """
@@ -142,7 +142,26 @@ class Protein(Component):
         # pae_inv = build.load_pae_inv(input_pae,colabfold=self.colabfold)
         # scaled_LJYU_pairlist = []
         self.scale = bfac_sigm * pae_sigm # restraint scale
-        self.bondscale = np.maximum(0, 1. - 5.* self.scale) # residual interactions for low restraints
+        # self.bondscale = np.minimum(1.,np.maximum(0, 1. - 10.* (self.scale - min_scale))) # residual interactions for low restraints
+        self.bondscale = np.exp(-bscale_width*(self.scale-bscale_shift)) / (np.exp(-bscale_width*(self.scale-bscale_shift)) + 1)
+        self.curate_bondscale()
+
+    def curate_bondscale(self, max_bscale = 0.95):
+        for idx in range(self.nbeads):
+            lower = self.bondscale[idx,:idx-3]
+            higher = self.bondscale[idx,idx+4:]
+            if idx <= 3:
+                others = higher
+            elif idx >= self.nbeads - 4:
+                others = lower
+            else:
+                others = np.concatenate([lower, higher])
+            count = np.sum(np.where(others < max_bscale,1,0)) # count how many nonlocal restraints
+            # print(idx,count)
+            if count == 0:
+                for jdx in range(max(0,idx-3),min(self.nbeads,idx+4)):
+                    self.bondscale[idx,jdx] = 1 # remove local restraints
+                    self.bondscale[jdx,idx] = 1 # remove local restraints
 
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
@@ -167,18 +186,24 @@ class Protein(Component):
         else:
             self.calc_x_setup(comp_setup = comp_setup)
 
-    def calc_bondlength(self, i, j):
+    def calc_bondlength(self, i, j, min_bscale = 0.05, max_bscale = 0.95):
         d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
         if self.restraint:
             if self.restraint_type == 'harmonic':
                 ss = build.check_ssdomain(self.ssdomains,i,j,req_both=False)
                 d = self.dmap[i,j] if ss else d0
             elif self.restraint_type == 'go':
-                d = self.bondscale[i,j] * d0 + (1. - self.bondscale[i,j]) * self.dmap[i,j]
+                if self.bondscale[i,j] > max_bscale:
+                    d = d0
+                elif self.bondscale[i,j] < min_bscale:
+                    d = self.dmap[i,j]
+                else:
+                    d = self.bondscale[i,j] * d0 + (1. - self.bondscale[i,j]) * self.dmap[i,j]
             else:
                 raise ValueError("Restraint type must be harmonic or go.")
         else:
             d = d0
+        # print(i,j,self.bondscale[i,j],d0,d)
         return d
 
     def bond_check(self, i: int, j: int):
@@ -210,7 +235,7 @@ class Protein(Component):
             self.scLJ = interactions.init_scaled_LJ(eps_lj,cutoff_lj)
             self.scYU = interactions.init_scaled_YU(eps_yu,k_yu)
 
-    def add_restraints(self, offset, min_scale = 0.1):
+    def add_restraints(self, offset, min_bscale = 0.05, max_bscale = 0.95):
         """ Add restraints. """
         exclusion_map = [] # for ah, yu etc.
         for i in range(0,self.nbeads-2):
@@ -226,11 +251,11 @@ class Protein(Component):
                     k = self.k_harmonic
                 # go
                 elif self.restraint_type == 'go':
-                    if self.scale[i,j] < min_scale:
+                    if self.bondscale[i,j] > max_bscale:
                         continue
                     k = self.k_go * self.scale[i,j]
                     # add scaled pseudo LJ, YU for low restraints
-                    if self.bondscale[i,j] > min_scale:
+                    if self.bondscale[i,j] > min_bscale:
                         self.scLJ, scaled_pair = interactions.add_scaled_lj(self.scLJ, i, j, offset, self)
                         self.scLJ_pairlist.append(scaled_pair)
                         if self.qs[i] * self.qs[j] != 0.:

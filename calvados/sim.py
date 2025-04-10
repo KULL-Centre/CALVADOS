@@ -337,10 +337,10 @@ class Sim:
         exclusion_map = comp.add_angles(offset)
         self.add_exclusions(exclusion_map)
 
-    def add_restraints(self, comp, offset, min_scale = 0.1, exclude_nonbonded = True):
+    def add_restraints(self, comp, offset, exclude_nonbonded = True):
         """ Add restraints to single molecule. """
 
-        exclusion_map = comp.add_restraints(offset, min_scale=min_scale)
+        exclusion_map = comp.add_restraints(offset)
         if exclude_nonbonded: # exclude ah, yu when restraining
             self.add_exclusions(exclusion_map)
 
