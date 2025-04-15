@@ -26,6 +26,25 @@ PACKAGEDIR = Path(__file__).parent.absolute()
 sys.path.append(f'{str(PACKAGEDIR):s}/BLOCKING')
 from main import BlockAnalysis
 
+def center_traj(pdb,traj,start=None,stop=None,step=1):
+    """ Center trajectory """
+  
+    u = mda.Universe(pdb,traj)
+    
+    with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
+        for ts in u.trajectory[start:stop:step]:
+            u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
+            W.write(u.atoms)
+
+def subsample_traj(pdb,traj,start=None,stop=None,step=1):
+    """ Subsample trajectory """
+
+    u = mda.Universe(pdb,traj)
+
+    with mda.Writer(f'{traj[:-4]}_sub.dcd', len(u.atoms)) as W:
+        for ts in u.trajectory[start:stop:step]:
+            W.write(u.atoms)
+
 @nb.jit(nopython=True)
 def calc_energy(dmap,sig,lam,rc_lj,eps_lj,qmap,
                 k_yu,rc_yu=4.0,
