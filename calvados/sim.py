@@ -252,6 +252,7 @@ class Sim:
         # Custom forces
         if self.custom_restraints:
             self.system.addForce(self.cres)
+            print(f'Number of custom restraints: {self.cres.getNumBonds()}')
 
         # Barostat force
         if self.box_eq:
