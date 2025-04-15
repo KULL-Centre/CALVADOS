@@ -42,7 +42,10 @@ class Sim:
             self.bilayer_eq = False
 
         if self.slab_eq:
-            self.rcent = interactions.init_eq_restraints(self.box,self.k_eq)
+            self.rcent = interactions.init_slab_restraints(self.box,self.k_eq)
+
+        if self.ext_force:
+            self.rcent = openmm.CustomExternalForce(self.ext_force_expr)
 
     def make_components(self):
         self.components = np.empty(0)
@@ -66,6 +69,15 @@ class Sim:
                 # Crowder component
                 comp_setup = 'spiral'
                 comp = RNA(name, properties, self.comp_defaults)
+            elif molecule_type == 'cyclic':
+                comp_setup = 'compact'
+                comp = Cyclic(name, properties, self.comp_defaults)
+            elif molecule_type == 'seastar':
+                comp_setup = 'compact'
+                comp = Seastar(name, properties, self.comp_defaults)
+            elif molecule_type == 'ptm_protein':
+                comp_setup = 'compact'
+                comp = PTMProtein(name, properties, self.comp_defaults)
             else:
                 # Generic component
                 comp_setup = 'linear'
@@ -186,7 +198,7 @@ class Sim:
                 self.add_particles_system(comp.mws)
 
                 # add interactions + restraints
-                if comp.molecule_type in ['protein','crowder']:
+                if comp.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein']:
                     xs = self.place_molecule(comp)
                 elif comp.molecule_type in ['lipid','cooke_lipid']:
                     xs = self.place_bilayer(comp)
@@ -195,8 +207,12 @@ class Sim:
                 self.add_interactions(comp)
 
                 # add restraints towards box center
-                if self.slab_eq and comp.molecule_type == 'protein':
-                    self.add_eq_restraints(comp)
+                if (self.slab_eq or self.ext_force) and comp.ext_restraint:
+                    self.add_ext_restraints(comp)
+
+        if self.custom_restraints:
+            self.map_custom_restraints()
+            self.add_custom_restraints()
 
         self.pdb_cg = f'{self.path}/top.pdb'
         a = md.Trajectory(self.pos, self.top, 0, self.box, [90,90,90])
@@ -225,15 +241,28 @@ class Sim:
             if comp.restraint:
                 print(f'Number of restraints for comp {comp.name}: {comp.cs.getNumBonds()}')
 
+        # External force
+        if self.ext_force:
+            self.system.addForce(self.rcent)
+
         # Equilibration forces
         if self.slab_eq:
             self.system.addForce(self.rcent)
+
+        # Custom forces
+        if self.custom_restraints:
+            self.system.addForce(self.cres)
+            print(f'Number of custom restraints: {self.cres.getNumBonds()}')
+
+        # Barostat force
         if self.box_eq:
             barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
                     [self.pressure[0]*unit.bar,self.pressure[1]*unit.bar,self.pressure[2]*unit.bar],
                     self.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
                     self.boxscaling_xyz[2],1000)
             self.system.addForce(barostat)
+
+        # Bilayer eq. force
         if self.bilayer_eq:
             barostat = openmm.openmm.MonteCarloMembraneBarostat(self.pressure[0]*unit.bar,
                     0*unit.bar*unit.nanometer, self.temp*unit.kelvin,
@@ -318,12 +347,23 @@ class Sim:
         exclusion_map = comp.add_angles(offset)
         self.add_exclusions(exclusion_map)
 
-    def add_restraints(self, comp, offset, min_scale = 0.1, exclude_nonbonded = True):
+    def add_restraints(self, comp, offset, exclude_nonbonded = True):
         """ Add restraints to single molecule. """
-        # restr_pairlist = []
 
-        exclusion_map = comp.add_restraints(offset, min_scale=min_scale)
+        exclusion_map = comp.add_restraints(offset)
         if exclude_nonbonded: # exclude ah, yu when restraining
+            self.add_exclusions(exclusion_map)
+
+    def add_custom_restraints(self, exclude_nonbonded = True):
+        exclusion_map = []
+        # self.custom_restr_pairs = []
+        self.cres = interactions.init_restraints(self.custom_restraint_type)
+        for i, j, r, k in self.custom_restr_abs: # i, j, r, k
+            self.cres, restr_pair = interactions.add_single_restraint(
+                self.cres, self.custom_restraint_type, r, k, i, j)
+            # self.custom_restr_pairs.append(restr_pair)
+            exclusion_map.append([i,j])
+        if exclude_nonbonded: # exclude cres when restraining
             self.add_exclusions(exclusion_map)
 
     def add_exclusions(self, exclusion_map):
@@ -381,8 +421,8 @@ class Sim:
             if comp.restraint:
                 comp.write_restraints(self.path)
 
-    def add_eq_restraints(self,comp):
-        """ Add equilibration restraints. """
+    def add_ext_restraints(self,comp):
+        """ Add external-potential restraints. """
 
         offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
         for i in range(0,comp.nbeads):
@@ -405,20 +445,60 @@ class Sim:
                         self.top.add_bond(chain.atom(i), chain.atom(j))
         else:
             for idx,resname in enumerate(comp.seq):
-                if comp.molecule_type == 'protein':
-                    resname = str(seq3(resname)).upper()
+                if comp.molecule_type in ['protein','crowder']:
+                    resname = comp.residues.loc[resname,'three']
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom('CA', element=md.element.carbon, residue=res)
             for i in range(chain.n_atoms-1):
                 if comp.bond_check(i,i+1):
                     self.top.add_bond(chain.atom(i), chain.atom(i+1))
 
-
     def add_particles_system(self,mws):
         """ Add particles of one molecule to openMM system. """
 
         for mw in mws:
             self.system.addParticle(mw*unit.amu)
+
+    def map_custom_restraints(self):
+        """ Map input format for custom restraints to absolute bead number """
+        custom_restr = self.parse_custom_restraints(self.fcustom_restraints)
+        total_beads = [0]
+        for idx, comp in enumerate(self.components):
+            comp.start_bead = total_beads[-1]
+            total_beads.append(int(comp.nmol * comp.nbeads))
+        self.custom_restr_abs = []
+        for i,j,r,k in custom_restr:
+            print(i,j,r,k)
+            crestr = []
+            for idx, x in enumerate([i,j]):
+                name, copy, bead = x[0], x[1], x[2] # 1-based
+                for idx, comp in enumerate(self.components):
+                    if comp.name == name:
+                        x_abs = comp.start_bead + (copy-1)*comp.nbeads + (bead-1)
+                        break
+                crestr.append(x_abs)
+            crestr.append(float(r))
+            crestr.append(float(k))
+            self.custom_restr_abs.append(crestr)
+
+    @staticmethod
+    def parse_custom_restraints(fcustom_restraints):
+        custom_restraints = []
+        with open(fcustom_restraints,'r') as f:
+            for line in f.readlines():
+                spl = line.split('|')
+                i = spl[0].split()
+                j = spl[1].split()
+                r = spl[2].split()[0]
+                k = spl[2].split()[1]
+                restr = [
+                    [i[0], int(i[1]), int(i[2])],
+                    [j[0], int(j[1]), int(j[2])],
+                    r,
+                    k
+                ]
+                custom_restraints.append(restr) # 1-based
+        return custom_restraints
 
     def simulate(self):
         """ Simulate. """

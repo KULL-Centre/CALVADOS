@@ -13,13 +13,13 @@ cwd = os.getcwd()
 sysname = f'{args.name:s}'
 
 # set the side length of the cubic box
-L = 30
+L = 123
 
 # set the saving interval (number of integration steps)
-N_save = 1000
+N_save = 8000
 
 # set final number of frames to save
-N_frames = 1000
+N_frames = 4000
 
 residues_file = f'{cwd}/input/residues_CALVADOS3.csv'
 
@@ -28,7 +28,7 @@ config = Config(
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
   temp = 293, # K
-  ionic = 0.15, # molar
+  ionic = 0.19, # molar
   pH = 7.0,
   topol = 'center',
 
@@ -37,6 +37,7 @@ config = Config(
   steps = N_frames*N_save, # number of simulation steps
   runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CPU', # or CUDA
+  threads = 4,
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
@@ -49,12 +50,12 @@ subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import save_rg
+from calvados.analysis import save_conf_prop
 
-save_rg("{path:s}","{sysname:s}","{residues_file:s}","data",10)
+save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path=f"{cwd}/data",start=100,is_idr=False,select='all')
 """
 
-config.write(path,name='config.yaml')
+config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
@@ -62,12 +63,10 @@ components = Components(
   nmol = 1, # number of molecules
   restraint = True, # apply restraints
   charge_termini = 'both', # charge N or C or both
-
   # INPUT
   fresidues = residues_file, # residue definitions
   fdomains = f'{cwd}/input/domains.yaml', # domain definitions (harmonic restraints)
   pdb_folder = f'{cwd}/input', # directory for pdb and PAE files
-
   # RESTRAINTS
   restraint_type = 'harmonic', # harmonic or go
   use_com = True, # apply on centers of mass instead of CA

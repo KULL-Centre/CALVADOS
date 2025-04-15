@@ -6,7 +6,8 @@ alpha: 0
 ffasta : 'fastabib.fasta'
 kb : 8033.0
 
-restraint : False
+ext_restraint : true
+restraint : false
 cutoff_restr : 0.9
 pdb_folder : 'pdbs'
 restraint_type : 'harmonic'
@@ -29,3 +30,8 @@ rna_pa : 3.14
 rna_nb_sigma : 0.4
 rna_nb_scale : 15
 rna_nb_cutoff : 0.6
+
+n_ends : 1
+
+ptm_name : 'example_ptm'
+ptm_locations : []

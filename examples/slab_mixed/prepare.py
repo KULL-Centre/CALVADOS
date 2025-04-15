@@ -9,14 +9,16 @@ cwd = os.getcwd()
 sysname = 'mixed_system'
 
 # set the side length of the slab box
-Lx = 20
-Lz = 150
+Lx = 15
+Lz = 80
 
 # set the saving interval (number of integration steps)
-N_save = 100
+N_save = 100000
 
 # set final number of frames to save
-N_frames = 100000
+N_frames = 1000
+
+residues_file = f'{cwd}/input/residues_C2RNA.csv'
 
 config = Config(
   # GENERAL
@@ -24,17 +26,19 @@ config = Config(
   box = [Lx, Lx, Lz], # nm
   temp = 293.15, # 20 degrees Celsius
   ionic = 0.15, # molar
-  pH = 7.5, # 7.5
+  pH = 7.5,
   topol = 'slab',
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
   runtime = 0, # overwrites 'steps' keyword if > 0
-  platform = 'CPU',
+  platform = 'CUDA',
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
+  slab_eq = True,
+  steps_eq = 100*N_save,
 
   # JOB SETTINGS (ignore if running locally)
   submit = False
@@ -43,16 +47,38 @@ config = Config(
 # PATH
 path = f'{cwd}/{sysname}'
 subprocess.run(f'mkdir -p {path}',shell=True)
+subprocess.run(f'mkdir -p {cwd}/data',shell=True)
 
-config.write(path,name='config.yaml')
+analyses = f"""
+from calvados.analysis import SlabAnalysis
+slab_analysis = SlabAnalysis(
+    name='mixed_system',
+    input_path=f'{cwd}/mixed_system',
+    output_path=f'{cwd}/data',
+    input_pdb='top.pdb', input_dcd=None,
+    centered_dcd='traj.dcd',
+    # use proteins as reference for centering
+    ref_chains=(0, 199),  # 0-based indexing, inclusive
+    ref_name='FUS-RGG3',
+    client_chain_list=[(200, 259)],
+    client_names=['polyU40'],
+    verbose=False
+    )
+slab_analysis.center(
+    start=250,
+    center_target='all'
+    )
+slab_analysis.calc_profiles()
+slab_analysis.calc_concentrations()
+"""
+
+config.write(path,name='config.yaml',analyses=analyses)
 
 components = Components(
   # Defaults
-  restraint = False, # apply restraints
-  charge_termini = 'both', # charge N or C or both
-  fresidues = f'{cwd}/residues_C2RNA.csv', # residue definitions
-  ffasta = f'{cwd}/mix.fasta',
- 
+  fresidues = residues_file, # residue definitions
+  ffasta = f'{cwd}/input/mix.fasta',
+
   # RNA settings
   rna_kb1 = 1400.0,
   rna_kb2 = 2200.0,
@@ -63,7 +89,7 @@ components = Components(
   rna_nb_cutoff = 2.0
 )
 
-components.add(name='polyR30', molecule_type='rna', nmol=25)
-components.add(name='FUSRGG3', molecule_type='protein', nmol=100)
+components.add(name='FUS-RGG3', molecule_type='protein', nmol=200, charge_termini='both')
+components.add(name='polyU40', molecule_type='rna', nmol=60)
 components.write(path,name='components.yaml')
 

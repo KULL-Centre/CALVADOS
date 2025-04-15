@@ -120,7 +120,7 @@ def init_scaled_YU(eps_yu,k_yu):
     scYU.setUsesPeriodicBoundaryConditions(True)
     return scYU
 
-def init_eq_restraints(box,k):
+def init_slab_restraints(box,k):
     """ Define restraints towards box center in z direction. """
 
     mindim = np.amin(box)
@@ -168,7 +168,6 @@ def add_scaled_yu(scYU, i, j, offset, comp):
 
 def add_exclusion(force, i: int, j: int):
     """ Add exclusions to a list of openMM forces """
-
     force.addExclusion(i,j)
     return force
 

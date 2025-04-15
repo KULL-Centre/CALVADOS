@@ -24,11 +24,17 @@ pressure : [0,0,0]
 boxscaling_xyz : [true,true,true]
 k_eq : 0.02
 steps_eq : 1000
+ext_force : false
+ext_force_expr : 'step(d2-18)*d2; d2=periodicdistance(x, y, z, 0, 0, z)^2'
 
 friction_coeff: 0.01 
 slab_width : 100
 slab_outer : 40
 random_number_seed : null
-report_potential_energy : False
+report_potential_energy : false
 logfreq : 1000000
 gpu_id: 0
+
+custom_restraints : false
+custom_restraint_type : 'harmonic'
+fcustom_restraints : 'custom_restraints.txt'

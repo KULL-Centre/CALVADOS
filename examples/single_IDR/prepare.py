@@ -13,13 +13,13 @@ cwd = os.getcwd()
 sysname = f'{args.name:s}'
 
 # set the side length of the cubic box
-L = 20
+L = 50
 
 # set the saving interval (number of integration steps)
-N_save = 1000
+N_save = 7000
 
 # set final number of frames to save
-N_frames = 1000
+N_frames = 1010
 
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 
@@ -27,9 +27,9 @@ config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
   box = [L, L, L], # nm
-  temp = 293, # K
-  ionic = 0.15, # molar
-  pH = 7.0, # 7.5
+  temp = 293.15, # K
+  ionic = 0.19, # M
+  pH = 7.5,
   topol = 'center',
 
   # RUNTIME SETTINGS
@@ -45,12 +45,13 @@ config = Config(
 # PATH
 path = f'{cwd}/{sysname:s}'
 subprocess.run(f'mkdir -p {path}',shell=True)
+subprocess.run(f'mkdir -p data',shell=True)
 
 analyses = f"""
 
-from calvados.analysis import save_rg
+from calvados.analysis import save_conf_prop
 
-save_rg("{path:s}","{sysname:s}","{residues_file:s}",".",10)
+save_conf_prop(path="{path:s}",name="{sysname:s}",residues_file="{residues_file:s}",output_path="data",start=10,is_idr=True,select='all')
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
