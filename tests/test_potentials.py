@@ -119,8 +119,9 @@ def test_ah_dh_potentials(resname1,resname2):
     u_dh = DHSP(dist,yukawa_eps,lD,4)
     u_calc = u_ah + u_dh
     abs_err = np.abs(u_calc-u)
+    u_abs = np.abs(u)
     print('Distance of max abs error:',dist[abs_err.argmax()])
     print('Distance of max abs error / sigma_ij:',dist[abs_err.argmax()]/sigma_ij)
-    print('Max Relative Error:',(abs_err[u>0]/u[u>0]).max())
+    print('Max Relative Error:',(abs_err[u_abs>0]/u_abs[u_abs>0]).max())
     assert np.allclose(u,u_calc,rtol=1e-3,atol=1e-8)
 
