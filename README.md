@@ -15,6 +15,15 @@ Please cite the following references when using the software:
 - G. Tesei, K. Lindorff-Larsen. Improved predictions of phase behaviour of intrinsically disordered proteins by tuning the interaction range. _Open Research Europe_ (2022), 2(94). [DOI: 10.12688/openreseurope.14967.2](https://doi.org/10.12688/openreseurope.14967.2)
 - F. Cao, S. von Bülow, G. Tesei, K. Lindorff-Larsen. A coarse-grained model for disordered and multi-domain proteins. _Protein Science_ (2024), 33(11):e5172. [DOI: 10.1002/pro.5172](https://doi.org/10.1002/pro.5172)
 
+## Documentation
+
+The software architecture of CALVADOS and illustrative examples are described in:
+
+S. von Bülow*, Y. Yasuda#, F. Cao#, T. K. Schulze#, A. I. Trolle#, A. S. Rauh#, R. Crehuet#, K. Lindorff-Larsen*, G. Tesei* (# equal contribution)
+Software package for simulations using the coarse-grained CALVADOS model, arXiv 2025. https://doi.org/10.48550/arXiv.2504.10408
+
+The examples described in the paper can be found in the `examples` folder.
+
 ## Installation Instructions
 
 1. Make new conda environment for calvados
@@ -40,12 +49,7 @@ pip install .
 
   python -m pytest
 ```
-The test `test_ah_dh_interactions` simulates two free amino acids, calculates the potential energies based on the saved trajectory and compares these values with those in the OpenMM log file.
-
-## Contact
-
-Please check out the example folders and the example files `prepare_minimal.py` and `prepare.py`. 
-For further questions and inquiries, please contact us.
+The test `test_potentials` simulates two free amino acids, calculates the potential energies based on the saved trajectory and compares these values with those in the OpenMM log file. Other tests check for correct bond order in the RNA model and correct custom restraints.
 
 ## Authors
 
