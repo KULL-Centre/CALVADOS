@@ -680,6 +680,17 @@ class SlabAnalysis:
         if self.verbose:
             print(f'Reference: name {self.ref_name}; chains {self.ref_chains[0]}-{self.ref_chains[1]}; nbeads: {self.nbeads_ref}')
 
+    @staticmethod
+    @nb.jit(nopython=True)
+    def distribute_monomers(prop, prop_binned, bin_counts, bead_positions, L):
+        for bpos in bead_positions:
+            while (bpos >= L) or (bpos < 0.):
+                bpos -= (bpos // L) * L
+            bin_idx = int(bpos)
+            prop_binned[bin_idx] += prop
+            bin_counts[bin_idx] += 1
+        return prop_binned, bin_counts
+
     def calc_orientations(self, step=1):
         """ 
         Calculate orientational order parameter S along z,
@@ -693,29 +704,24 @@ class SlabAnalysis:
         z = np.array([0.,0.,1.])
 
         bin_counts = np.zeros((int(self.lz)))
-        P2_bins = np.zeros((int(self.lz)))
+        sz_binnned = np.zeros((int(self.lz)))
 
         for idx, seg in tqdm(enumerate(self.ag_ref_per_chain),total=len(self.ag_ref_per_chain)):
             for t, ts in enumerate(self.u.trajectory[::step]):
-                bead_positions = seg.positions[:,2] #/ 10. #- shift
                 a = seg.principal_axes()[2]
                 cos = self.calc_cos(a,z)
-                P2 = 3./2.*cos**2 - 1./2.
-                for bpos in bead_positions:
-                    while (bpos >= self.lz) or (bpos < 0.):
-                        bpos -= (bpos // self.lz) * self.lz
-                    bin_idx = int(bpos)
-                    P2_bins[bin_idx] += P2
-                    bin_counts[bin_idx] += 1
+                sz = 3./2.*cos**2 - 1./2.
+                bead_positions = seg.positions[:,2]
+                sz_binnned, bin_counts = self.distribute_monomers(sz, sz_binnned, bin_counts, bead_positions, self.lz)
         
-        P2s_m = np.zeros((int(self.lz)))
-        for bin_idx, P2 in enumerate(P2_bins):
+        sz_m = np.zeros((int(self.lz)))
+        for bin_idx, sz in enumerate(sz_binnned):
             if bin_counts[bin_idx] == 0:
-                P2s_m[bin_idx] = 0.
+                sz_m[bin_idx] = 0.
             else:
-                P2s_m[bin_idx] = P2 / bin_counts[bin_idx]
+                sz_m[bin_idx] = sz / bin_counts[bin_idx]
         
-        np.save(f'{self.output_path}/{self.name}_sz.npy',P2s_m)
+        np.save(f'{self.output_path}/{self.name}_sz.npy',sz_m)
 
     def calc_rgs(self, step=1):
         """
@@ -727,27 +733,22 @@ class SlabAnalysis:
         self.load_ref()
 
         bin_counts = np.zeros((int(self.lz)))
-        rg2s = np.zeros((int(self.lz)))
+        rg2_binned = np.zeros((int(self.lz)))
 
         for idx, seg in tqdm(enumerate(self.ag_ref_per_chain),total=len(self.ag_ref_per_chain)):
             for t,ts in enumerate(self.u.trajectory[::step]):
-                rg = seg.radius_of_gyration() / 10. # nm
+                rg2 = (seg.radius_of_gyration() / 10.)**2 # nm
                 bead_positions = seg.positions[:,2]
-                for bpos in bead_positions:
-                    while (bpos >= self.lz) or (bpos < 0.):
-                        bpos -= (bpos // self.lz) * self.lz
-                    bin_idx = int(bpos)
-                    rg2s[bin_idx] += rg**2
-                    bin_counts[bin_idx] += 1
+                rg2_binned, bin_counts = self.distribute_monomers(rg2, rg2_binned, bin_counts, bead_positions, self.lz)
 
-        rgs = np.zeros((int(self.lz)))
+        rg_m = np.zeros((int(self.lz)))
 
-        for bin_idx, rg2 in enumerate(rg2s):
+        for bin_idx, rg2 in enumerate(rg2_binned):
             if bin_counts[bin_idx] == 0:
-                rgs[bin_idx] = np.nan
+                rg_m[bin_idx] = np.nan
             else:
-                rgs[bin_idx] = np.sqrt(rg2 / bin_counts[bin_idx])
-        np.save(f'{self.output_path}/{self.name}_rg.npy',rgs)
+                rg_m[bin_idx] = np.sqrt(rg2 / bin_counts[bin_idx])
+        np.save(f'{self.output_path}/{self.name}_rg.npy',rg_m)
 
     def plot_density_profiles(self):
         fig, ax = plt.subplots(figsize=(8,4))
