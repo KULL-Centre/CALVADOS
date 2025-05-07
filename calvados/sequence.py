@@ -1,6 +1,8 @@
 import numpy as np
 
 from MDAnalysis import Universe
+from MDAnalysis.lib.util import convert_aa_code
+
 
 import random
 
@@ -9,6 +11,7 @@ from re import findall
 from Bio import SeqIO, SeqUtils
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+
 
 import os
 
@@ -52,7 +55,7 @@ def seq_from_pdb(pdb,selection='all',fmt='string'):
     res3 = ag.residues.resnames
     for res in res3:
         if len(res) == 3:
-            res1 = SeqUtils.seq1(res)
+            res1 = convert_aa_code(res)
         else:
             res1 = res
         if res1 == "":
