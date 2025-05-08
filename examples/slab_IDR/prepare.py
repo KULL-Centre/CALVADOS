@@ -29,10 +29,6 @@ config = Config(
   slab_width = 20,
   friction = 0.01,
 
-  # INPUT
-  ffasta = f'{cwd}/input/fastalib.fasta', # input fasta file
-  fresidues = f'{cwd}/input/residues.csv', # residue definitions
-
   # RUNTIME SETTINGS
   gpu_id = args.gpu_id,
   wfreq = N_save, # dcd writing frequency, 1 = 10fs
