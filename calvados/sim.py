@@ -42,7 +42,7 @@ class Sim:
             self.bilayer_eq = False
 
         if self.slab_eq:
-            self.rcent = interactions.init_slab_restraints(self.box,self.k_eq)
+            self.rcent = interactions.init_slab_restraints(self.box,self.k_eq,self.slab_eq_axis)
 
         if self.ext_force:
             self.rcent = openmm.CustomExternalForce(self.ext_force_expr)
@@ -282,7 +282,7 @@ class Sim:
         print(f'ah: {self.ah.getNumParticles()} particles, {self.ah.getNumExclusions()} exclusions')
         print(f'yu: {self.yu.getNumParticles()} particles, {self.yu.getNumExclusions()} exclusions')
         if self.slab_eq:
-            print(f'Equilibration restraints (rcent) towards box center in z direction')
+            print(f'Equilibration restraints (rcent) towards box center in {self.slab_eq_axis} direction')
             print(f'rcent: {self.rcent.getNumParticles()} restraints')
         if self.bilayer_eq:
             print(f'Equilibration under zero lateral tension')

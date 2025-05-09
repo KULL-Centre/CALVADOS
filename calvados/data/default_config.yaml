@@ -17,6 +17,7 @@ frestart : 'restart.chk'
 verbose : false
 
 slab_eq : false
+slab_eq_axis : [false,false,true]
 bilayer_eq : false
 pressure_coupling : false
 box_eq : false

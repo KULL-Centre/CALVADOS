@@ -120,14 +120,21 @@ def init_scaled_YU(eps_yu,k_yu):
     scYU.setUsesPeriodicBoundaryConditions(True)
     return scYU
 
-def init_slab_restraints(box,k):
+def init_slab_restraints(box,k,axis=[False,False,True]):
     """ Define restraints towards box center in z direction. """
 
+    x = 'x0' if axis[0] else 'x'
+    y = 'y0' if axis[1] else 'y'
+    z = 'z0' if axis[2] else 'z'
+
     mindim = np.amin(box)
-    rcent_expr = 'k*abs(periodicdistance(x,y,z,x,y,z0))'
+    rcent_expr = f'k*abs(periodicdistance(x,y,z,{x},{y},{z}))'
     rcent = openmm.CustomExternalForce(rcent_expr)
     rcent.addGlobalParameter('k',k*unit.kilojoules_per_mole/unit.nanometer)
-    rcent.addGlobalParameter('z0',box[2]/2.*unit.nanometer) # center of box in z
+
+    for idx, a0 in enumerate([x,y,z]):
+        if axis[idx]:
+            rcent.addGlobalParameter(a0,box[idx]/2.*unit.nanometer) # center of box in axis dim.
     # rcent.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
     # rcent.setCutoffDistance(mindim/2.*unit.nanometer)
     return rcent
