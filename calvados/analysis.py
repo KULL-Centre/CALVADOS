@@ -16,10 +16,13 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.stats import sem
 
 from calvados.build import get_ssdomains
+from calvados.sequence import seq_from_pdb
 
 import matplotlib.pyplot as plt
 
 import math
+
+from Bio import SeqUtils
 
 import os
 import sys
@@ -775,6 +778,64 @@ class SlabAnalysis:
         fig.tight_layout()
         fig.savefig(f'{self.output_path}/{self.name}_profiles.pdf')
 
+    def calc_com_traj(self,residues_file,
+        start=None,end=None,step=1,
+        index_col='three'):
+        """
+        Calculate trajectory of chain COMs and per-frame Rg's for each chain.
+        """
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        print(self.ref_chains)
+
+        residues = pd.read_csv(residues_file, index_col=index_col)
+
+        traj = md.load_dcd(f'{self.input_path}/traj.dcd',top=f'{self.input_path}/{self.input_pdb}')
+
+        chain_prop = {}
+        chain_name = self.ref_name
+        n_chains = 0
+        chainids = self.ref_chains
+
+        chain_prop[chain_name] = {}
+        # if type(chainids) is int:
+        #     chainids = (chainids, chainids)
+        seq = [res.name for res in traj.top.chain(chainids[0]).residues]
+        if len(seq[0]) == 1:
+            seq = [SeqUtils.seq3(res).upper() for res in seq]
+        mws = residues.loc[seq,'MW'].values
+        mws[0] += 2
+        mws[-1] += 16
+        print(mws)
+        chain_prop[chain_name]['ids'] = np.arange(chainids[0],chainids[1]+1)
+        n_chains += chain_prop[chain_name]['ids'].size
+        chain_prop[chain_name]['N'] = len(seq)
+        chain_prop[chain_name]['MWs'] = mws
+        chain_prop[chain_name]['rgs'] = []
+
+        # calculate traj of chain COM
+        cmtop = md.Topology()
+        xyz = np.empty((traj.n_frames,n_chains,3))
+        for chain_name in chain_prop.keys():
+            print(chain_name)
+            for chainid in chain_prop[chain_name]['ids']:
+                print(chainid)
+                chain = traj.top.chain(chainid)
+                mws = chain_prop[chain_name]['MWs']
+                new_chain = cmtop.add_chain()
+                res = cmtop.add_residue('COM', new_chain, resSeq=chainid)
+                cmtop.add_atom(chain_name, element=traj.top.atom(0).element, residue=res)
+                t_chain = traj.atom_slice(traj.top.select(f'chainid {chainid:d}'))
+                com = np.sum(t_chain.xyz*mws[np.newaxis,:,np.newaxis],axis=1)/mws.sum()
+                xyz[:,new_chain.index,:] = com
+        cmtraj = md.Trajectory(xyz, cmtop, traj.time, traj.unitcell_lengths, traj.unitcell_angles)
+
+        # calculate radial distribution function
+        cmtraj[0].save_pdb(f'{self.output_path}/{self.name}_com_top.pdb')
+        cmtraj.save_dcd(f'{self.output_path}/{self.name}_com_traj.dcd')
+
     @staticmethod
     def calc_cos(a,b):
         cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
@@ -905,7 +966,8 @@ class SlabAnalysis:
 #     # cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
 #     return cos
 
-def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=None,end=None,step=1,input_pdb='top.pdb'):
+def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},
+        start=None,end=None,step=1,input_pdb='top.pdb',verbose=False):
     """
     Calculate trajectory of chain COMs and per-frame Rg's for each chain.
 
@@ -968,7 +1030,11 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=N
     cmtop = md.Topology()
     xyz = np.empty((traj.n_frames,n_chains,3))
     for chain_name in chain_prop.keys():
+        if verbose:
+            print(chain_name)
         for chainid in chain_prop[chain_name]['ids']:
+            if verbose:
+                print(chainid)
             chain = traj.top.chain(chainid)
             mws = chain_prop[chain_name]['MWs']
             new_chain = cmtop.add_chain()
