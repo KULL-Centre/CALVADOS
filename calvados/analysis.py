@@ -26,6 +26,25 @@ PACKAGEDIR = Path(__file__).parent.absolute()
 sys.path.append(f'{str(PACKAGEDIR):s}/BLOCKING')
 from main import BlockAnalysis
 
+def center_traj(pdb,traj,start=None,stop=None,step=1):
+    """ Center trajectory """
+  
+    u = mda.Universe(pdb,traj)
+    
+    with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
+        for ts in u.trajectory[start:stop:step]:
+            u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
+            W.write(u.atoms)
+
+def subsample_traj(pdb,traj,start=None,stop=None,step=1):
+    """ Subsample trajectory """
+
+    u = mda.Universe(pdb,traj)
+
+    with mda.Writer(f'{traj[:-4]}_sub.dcd', len(u.atoms)) as W:
+        for ts in u.trajectory[start:stop:step]:
+            W.write(u.atoms)
+
 @nb.jit(nopython=True)
 def calc_energy(dmap,sig,lam,rc_lj,eps_lj,qmap,
                 k_yu,rc_yu=4.0,
@@ -138,7 +157,7 @@ def calc_wcn(comp,pos,fdomains=None,ssonly=True,r0=0.7):
         for i in range(N-1):
             for j in range(i+1,N):
                 ss = False
-                if fdomains != None:
+                if fdomains is not None:
                     for ssdom in ssdomains:
                         if (i in ssdom) and (j in ssdom):
                             ss = True
@@ -238,7 +257,7 @@ def calc_rmsd(u,uref,select='all',f_out=None,step=1):
     sel = u.select_atoms(select)
     RMSFmean = rms.RMSF(sel).run(step=step)
 
-    if f_out != None:
+    if f_out is not None:
         u_mean2.select_atoms(select).write(f_out)
     return Rref.results.rmsd.T,Rmean.results.rmsd.T,RMSFmean.results.rmsf
 
@@ -354,7 +373,7 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
     dij = np.array(dij)
     # print(ij.shape)
     # print(dij.shape)
-    if r0 == None:
+    if r0 is None:
         (r0, v), pcov = curve_fit(scaling_exp,ij[ij>ij0],dij[ij>ij0])
         perr = np.sqrt(np.diag(pcov))
         verr = perr[1]
@@ -519,6 +538,7 @@ class SlabAnalysis:
         # Reference profile
         h_ref = np.zeros((n_frames,self.n_bins))
         for t,ts in enumerate(u.trajectory[start:end:step]):
+            ts = transformations.wrap(ag_ref)(ts)
             zpos = ag_ref.positions.T[2]
             h, e = np.histogram(zpos,bins=self.edges)
             h_ref[t] = h * conv_ref # mM
@@ -716,7 +736,7 @@ class SlabAnalysis:
             dG = -dGmin
             dG_error = np.nan
         elif c_den == 0. and c_dil == 0.:
-            print(f'No dense or dilute phase, setting dG to NaN')
+            print('No dense or dilute phase, setting dG to NaN')
             dG = np.nan
             dG_error = np.nan
         else:
@@ -752,7 +772,7 @@ class SlabAnalysis:
         return cutoffs_dense, cutoffs_dilute
 
         if (np.abs(cutoffs_dilute[1]/cutoffs_dilute[0]) > 2) or (np.abs(cutoffs_dilute[1]/cutoffs_dilute[0]) < 0.5): # ratio between right and left should be close to 1
-            print('NOT CONVERGED',name,cutoffs_dense,cutoffs_dilute)
+            print('NOT CONVERGED',cutoffs_dense,cutoffs_dilute)
             print(res1.x,res2.x)
 
     @staticmethod
@@ -770,9 +790,27 @@ class SlabAnalysis:
 
         return eden, edil
 
-def calc_com_traj(path,name,output_path,residues_file,list_chainids=[[0]],start=None,end=None,step=1,input_pdb='top.pdb'):
+def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=None,end=None,step=1,input_pdb='top.pdb'):
+    """
+    Calculate trajectory of chain COMs and per-frame Rg's for each chain.
+
+    Parameters:
+    -----------
+    chainid_dict : dict
+        Examples:
+            {'name_1': 0, 'name_2': 1}
+            {'name_1': (0, 99), 'name_2': (100, 199)}
+        - Keys are component names.
+        - Values are integers or tuples representing the first and last chain IDs.
+
+        The dictionary can contains as many entries as the number of components in the system.
+
+        If the dictionary is not provided as an argument, the function assumes a
+        single-component system named `sysname` and calculates a COM trajectory and per-frame Rg's
+        for all the chains in the topology.
+    """
     if not os.path.isfile(f'{path:s}/traj.dcd'):
-        u = mda.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{name:s}.dcd',in_memory=True)
+        u = mda.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{sysname:s}.dcd',in_memory=True)
         ag = u.select_atoms('all')
         n_atoms = ag.n_atoms
         # create list of bonds
@@ -781,7 +819,7 @@ def calc_com_traj(path,name,output_path,residues_file,list_chainids=[[0]],start=
             for i in segment.atoms.indices[:-1]:
                 bonds.extend([(i, i+1)])
         u.add_TopologyAttr('bonds', bonds)
-        with MDAnalysis.Writer(f'{path:s}/traj.dcd',n_atoms) as W:
+        with mda.Writer(f'{path:s}/traj.dcd',n_atoms) as W:
             for t,ts in enumerate(u.trajectory[start:end:step]):
                 # make chains whole
                 ts = transformations.unwrap(ag)(ts)
@@ -790,89 +828,142 @@ def calc_com_traj(path,name,output_path,residues_file,list_chainids=[[0]],start=
     traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
     traj.xyz -= traj.unitcell_lengths[0,:]/2
 
-    residues = pd.read_csv(residues_file).set_index('three')
+    if len(chainid_dict) == 0:
+        chainid_dict[sysname] = (0, traj.top.n_chains-1)
 
-    chain_props = {}
+    residues = pd.read_csv(residues_file, index_col='three')
 
-    if len(list_chainids) > 0:
-        for prot_chainids, chain_name in zip(list_chainids,['A','B','C','D','E']):
-            seq = [res.name for res in traj.top.chain(prot_chainids[0]).residues]
-            masses = residues.loc[seq,'MW'].values
-            masses[0] += 2
-            masses[-1] += 16
-            chain_props[chain_name] = {'N':len(seq),'masses':masses,'rgs':[]}
+    chain_prop = {}
+    n_chains = 0
+    for chain_name, chainids in chainid_dict.items():
+        chain_prop[chain_name] = {}
+        if type(chainids) is int:
+            chainids = (chainids, chainids)
+        seq = [res.name for res in traj.top.chain(chainids[0]).residues]
+        mws = residues.loc[seq,'MW'].values
+        mws[0] += 2
+        mws[-1] += 16
+        chain_prop[chain_name]['ids'] = np.arange(chainids[0],chainids[1]+1)
+        n_chains += chain_prop[chain_name]['ids'].size
+        chain_prop[chain_name]['N'] = len(seq)
+        chain_prop[chain_name]['MWs'] = mws
+        chain_prop[chain_name]['rgs'] = []
 
     # calculate traj of chain COM
     cmtop = md.Topology()
-    xyz = np.empty((traj.n_frames,traj.n_chains,3))
-    for chain in traj.top.chains:
-        if len(list_chainids) > 0:
-            for prot_chainsid, chain_name in zip(list_chainids,['A','B','C','D','E']):
-                if chain.index in prot_chainsid:
-                   break
-        mws = chain_props[chain_name]['masses']
-        new_chain = cmtop.add_chain()
-        res = cmtop.add_residue('COM', new_chain, resSeq=chain.index)
-        cmtop.add_atom(chain_name, element=traj.top.atom(0).element, residue=res)
-        t_chain = traj.atom_slice(traj.top.select(f'chainid {chain.index:d}'))
-        com = np.sum(t_chain.xyz*mws[np.newaxis,:,np.newaxis],axis=1)/mws.sum()
-        # calculate residue-cm distances
-        si = np.linalg.norm(t_chain.xyz - com[:,np.newaxis,:],axis=2)
-        # calculate rg
-        chain_rg = np.sqrt(np.sum(si**2*mws,axis=1)/mws.sum())
-        chain_props[chain_name]['rgs'].append(chain_rg.tolist())
-        xyz[:,chain.index] = com
+    xyz = np.empty((traj.n_frames,n_chains,3))
+    for chain_name in chain_prop.keys():
+        for chainid in chain_prop[chain_name]['ids']:
+            chain = traj.top.chain(chainid)
+            mws = chain_prop[chain_name]['MWs']
+            new_chain = cmtop.add_chain()
+            res = cmtop.add_residue('COM', new_chain, resSeq=chainid)
+            cmtop.add_atom(chain_name, element=traj.top.atom(0).element, residue=res)
+            t_chain = traj.atom_slice(traj.top.select(f'chainid {chainid:d}'))
+            com = np.sum(t_chain.xyz*mws[np.newaxis,:,np.newaxis],axis=1)/mws.sum()
+            # calculate residue-cm distances
+            si = np.linalg.norm(t_chain.xyz - com[:,np.newaxis,:],axis=2)
+            # calculate rg
+            chain_rg = np.sqrt(np.sum(si**2*mws,axis=1)/mws.sum())
+            chain_prop[chain_name]['rgs'].append(chain_rg.tolist())
+            xyz[:,new_chain.index,:] = com
     cmtraj = md.Trajectory(xyz, cmtop, traj.time, traj.unitcell_lengths, traj.unitcell_angles)
 
-    for chain_name in chain_props.keys():
-        np.save(output_path+f'/{name:s}_rg_prot_{chain_name:s}.npy',np.asarray(chain_props[chain_name]['rgs']).flatten())
+    for chain_name in chain_prop.keys():
+        np.save(output_path+f'/{sysname:s}_{chain_name:s}_rg.npy',np.asarray(chain_prop[chain_name]['rgs']).T)
 
     # calculate radial distribution function
-    cmtraj[0].save_pdb(f'{path:s}/com_top.pdb')
-    cmtraj.save_dcd(f'{path:s}/com_traj.dcd')
+    cmtraj[0].save_pdb(output_path+f'/{sysname:s}_com_top.pdb')
+    cmtraj.save_dcd(output_path+f'/{sysname:s}_com_traj.dcd')
 
-def calc_contact_map(path,name,output_path,prot_1_chainids,prot_2_chainids,in_slab=False,input_pdb='top.pdb'):
-    if in_slab and not os.path.isfile(output_path+f'/{name:s}_ps_results.csv'):
-        raise ValueError('Please run function in SlabAnalysis class first')
-    elif in_slab:
-        ps_results = pd.read_csv(output_path+f'/{name:s}_ps_results.csv',index_col=0)
-        z_dil = 0.5*(np.abs(ps_results.loc[f'{name:s}_ref','cutoffs_dilute_left']) + ps_results.loc[f'{name:s}_ref','cutoffs_dilute_right'])
-        z_den = 0.5*(np.abs(ps_results.loc[f'{name:s}_ref','cutoffs_dense_left']) + ps_results.loc[f'{name:s}_ref','cutoffs_dense_right'])
-    if in_slab and not os.path.isfile(f'{path:s}/com_traj.dcd'):
-        raise ValueError('Please run calc_com_traj first')
-    elif in_slab:
-        cmtraj = md.load_dcd(f'{path:s}/com_traj.dcd',top=f'{path:s}/com_top.pdb')
+def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,input_pdb='top.pdb'):
+    """
+    Calculate the contact map between two sets of chain IDs specified in the given dictionary.
 
+    Parameters:
+    -----------
+    chainid_dict : dict
+        Examples:
+            {'name_1': 0, 'name_2': 1}
+            {'name_1': (0, 99), 'name_2': (100, 199)}
+        - Keys are component names.
+        - Values are integers or tuples representing the first and last chain IDs.
+
+        If the dictionary contains only one chain entry, the function calculates a
+        homotypic contact map.
+        If the dictionary is not provided as an argument, the function assumes a
+        single-component system named `sysname` and calculates a homotypic contact using
+        all the chains in the topology.
+
+    is_slab : bool, optional (default=False)
+        If True, the function calculates a contact map between chains in the midplane
+        of the slab and all surrounding chains.
+        In this case, the first item in `chainid_dict` should be the component
+        used to center the slab in `SlabAnalysis`.
+    """
     traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
     traj.xyz -= traj.unitcell_lengths[0,:]/2
 
-    if in_slab:
-        cm_z_1 = cmtraj.xyz[:,prot_1_chainids,2]
-        prot_1_chainids = np.argmin(np.abs(cm_z_1),axis=0)
-        mask_den = np.abs(cm_z_1[:,2]) < z_den
-        mask_dil = np.abs(cm_z_1[:,2]) > z_dil
-        rg_1 = np.load(output_path+f'/{name:s}_rg_prot_A.npy')
-        rg_2 = np.load(output_path+f'/{name:s}_rg_prot_B.npy')
-        np.save(output_path+f'/{name:s}_rg_prot_A_den.npy',rg_1[mask_den])
-        np.save(output_path+f'/{name:s}_rg_prot_A_dil.npy',rg_1[mask_dil])
-        np.save(output_path+f'/{name:s}_rg_prot_B_den.npy',rg_2[mask_den])
-        np.save(output_path+f'/{name:s}_rg_prot_B_dil.npy',rg_2[mask_dil])
-
-    N_res_1 = traj.top.chain(prot_1_chainids[0]).n_residues
-    N_res_2 = traj.top.chain(prot_2_chainids[0]).n_residues
-
-    cmap_sum = np.zeros((N_res_1,N_res_2))
-    for chain_1 in np.unique(prot_1_chainids):
-        surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in prot_2_chainids if i != chain_1]))
-        pair_indices = traj.top.select_pairs(f'chainid {chain_1:d}',surrounding_chains)
-        if in_slab:
-            ndx = prot_1_chainids==chain_1
+    if len(chainid_dict) > 0:
+        name_1 = next(iter(chainid_dict))
+        if type(chainid_dict[name_1]) is int:
+            chainid_dict[name_1] = (chainid_dict[name_1], chainid_dict[name_1])
+        chainid_dict[name_1] = np.arange(chainid_dict[name_1][0], chainid_dict[name_1][1]+1)
+        if len(chainid_dict) > 1:
+            name_2 = next(iter(list(chainid_dict.keys())[1:]))
+            if type(chainid_dict[name_2]) is int:
+                chainid_dict[name_2] = (chainid_dict[name_2], chainid_dict[name_2])
+            chainid_dict[name_2] = np.arange(chainid_dict[name_2][0], chainid_dict[name_2][1]+1)
         else:
-            ndx = np.full(traj.n_frames, True, dtype=bool)
-            if np.any(ndx):
-                d = md.compute_distances(traj[ndx],pair_indices)
-                cmap = .5-.5*np.tanh((d-1.)/.3)
-                cmap_sum += cmap.reshape(ndx.size,N_res_1,-1,N_res_2).sum(axis=0).sum(axis=1)
-    cmap_sum /= traj.n_frames
+            # if homotypic cmap
+            name_2 = name_1
+    else:
+        name_1 = sysname
+        name_2 = name_1
+        chainid_dict[name_1] = np.arange(traj.top.n_chains)
+
+    N_res_1 = traj.top.chain(chainid_dict[name_1][0]).n_residues
+    N_res_2 = traj.top.chain(chainid_dict[name_2][0]).n_residues
+
+    if is_slab:
+        if not os.path.isfile(output_path+f'/{sysname:s}_ps_results.csv'):
+            raise ValueError('Please run functions in SlabAnalysis class first')
+        else:
+            ps_results = pd.read_csv(output_path+f'/{sysname:s}_ps_results.csv',index_col=0).loc[f'{sysname:s}_{name_1:s}']
+            z_dil = 0.5*(np.abs(ps_results.cutoffs_dilute_left) + ps_results.cutoffs_dilute_right)
+            z_den = 0.5*(np.abs(ps_results.cutoffs_dense_left) + ps_results.cutoffs_dense_right)
+        if not os.path.isfile(output_path+f'/{sysname:s}_com_traj.dcd'):
+            raise ValueError('Please run calc_com_traj first')
+        else:
+            cmtraj = md.load_dcd(output_path+f'/{sysname:s}_com_traj.dcd',top=output_path+f'/{sysname:s}_com_top.pdb')
+
+        for chain_name, chainids in chainid_dict.items():
+            cm_z = cmtraj.xyz[:,chainids,2]
+            mask_den = np.abs(cm_z) < z_den
+            mask_dil = np.abs(cm_z) > z_dil
+            rg = np.load(output_path+f'/{sysname:s}_{chain_name:s}_rg.npy')
+            np.save(output_path+f'/{sysname:s}_{chain_name:s}_rg_dense.npy',rg[mask_den])
+            np.save(output_path+f'/{sysname:s}_{chain_name:s}_rg_dilute.npy',rg[mask_dil])
+        if name_2 == name_1:
+            # if homotypic cmap, save a copy of all indices
+            name_2 = name_1 + '_homotypic'
+            chainid_dict[name_2] = chainid_dict[name_1]
+        cm_z = cmtraj.xyz[:,chainid_dict[name_1],2]
+        # per-frame central-chain indices
+        chainid_dict[name_1] = np.argmin(np.abs(cm_z),axis=1)
+
+    cmap = np.zeros((N_res_1,N_res_2))
+    for chain_1 in np.unique(chainid_dict[name_1]):
+        surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in chainid_dict[name_2] if i != chain_1]))
+        pair_indices = traj.top.select_pairs(f'chainid {chain_1:d}',surrounding_chains)
+        if is_slab:
+            mask_frames = chainid_dict[name_1] == chain_1
+        else:
+            mask_frames = np.full(traj.n_frames, True, dtype=bool)
+        if np.any(mask_frames):
+            d = md.compute_distances(traj[mask_frames],pair_indices)
+            cmap += (.5-.5*np.tanh((d-1.)/.3)).reshape(mask_frames.sum(),
+                        N_res_1,-1,N_res_2).sum(axis=0).sum(axis=1)
+    cmap /= traj.n_frames
     # save energy and contact maps
-    np.save(output_path+f'/{name:s}_cmap.npy',cmap_sum)
+    np.save(output_path+f'/{sysname:s}_{name_1:s}_{name_2:s}_cmap.npy',cmap)

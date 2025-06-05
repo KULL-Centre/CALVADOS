@@ -97,7 +97,7 @@ class PressureDataReporter(object):
         else:
             self._out = file
         self._hasInitialized = False
-        self._volume = volume
+        self._volume = volume * 1e-27 # cubic meters
         self._masses = masses
         self._needsPositions = True
         self._needsVelocities = False
@@ -179,4 +179,4 @@ class PressureDataReporter(object):
 
     def __del__(self):
         if self._openedFile:
-            np.save(self._out,np.asarray(self._pressure))
+            np.save(self._out,np.asarray(self._pressure)/self._volume)

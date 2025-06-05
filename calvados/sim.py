@@ -613,7 +613,7 @@ class Sim:
             integrator.addGlobalVariable("step", 0)
             integrator.addGlobalVariable("a", np.exp(-self.friction_coeff*dt))
             integrator.addGlobalVariable("b", np.sqrt(1-np.exp(-2*self.friction_coeff*dt)))
-            integrator.addGlobalVariable("RT", MOLAR_GAS_CONSTANT_R*self.temp*unit.kelvin)
+            integrator.addGlobalVariable("RT", unit.MOLAR_GAS_CONSTANT_R*self.temp*unit.kelvin)
             integrator.addPerDofVariable("x1", 0)
 
             integrator.addGlobalVariable("k_xx", 0)
