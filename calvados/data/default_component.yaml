@@ -9,7 +9,7 @@ kb : 8033.0
 ext_restraint : true
 restraint : false
 cutoff_restr : 0.9
-pdb_folder : 'pdbs'
+pdb_folder : ''
 restraint_type : 'harmonic'
 k_harmonic : 700.
 fdomains : 'domains.yaml'
