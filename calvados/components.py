@@ -32,7 +32,7 @@ class Component:
     def calc_comp_seq(self):
         """ Calculate sequence of component. """
 
-        if self.restraint:
+        if self.pdb_folder:
             self.seq, self.n_termini, self.c_termini = seq_from_pdb(f'{self.pdb_folder}/{self.name}.pdb')
         else:
             records = read_fasta(self.ffasta)
@@ -175,10 +175,12 @@ class Protein(Component):
             print(f'Adding charges for {self.charge_termini} termini of {self.name}.', flush=True)
         self.qs = patch_terminal_qs(self.qs,self.n_termini,self.c_termini,loc=self.charge_termini)
 
-        if self.restraint:
-            # self.init_restraint_force() # Done via sim.py
+        if self.pdb_folder:
             self.calc_x_from_pdb()
             self.calc_dmap()
+
+        if self.restraint:
+            # self.init_restraint_force() # Done via sim.py
             if self.restraint_type == 'harmonic':
                 self.calc_ssdomains()
             elif self.restraint_type == 'go':
