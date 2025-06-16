@@ -131,37 +131,39 @@ class Protein(Component):
 
         input_pdb = f'{self.pdb_folder}/{self.name}.pdb'
         bfac = build.bfac_from_pdb(input_pdb,confidence=0.)
-        bfac_map = np.add.outer(bfac,bfac) / 2.
-        bfac_sigm_factor = self.bfac_width*(bfac_map-self.bfac_shift)
+        self.bfac_map = np.minimum.outer(bfac,bfac)
+        bfac_sigm_factor = self.bfac_width*(self.bfac_map-self.bfac_shift)
         bfac_sigm = np.exp(bfac_sigm_factor) / (np.exp(bfac_sigm_factor) + 1)
 
         input_pae = f'{self.pdb_folder}/{self.name}.json'
-        pae = build.load_pae(input_pae,symmetrize=True,colabfold=self.colabfold) / 10. # in nm
-        pae_sigm_factor = -self.pae_width*(pae-self.pae_shift)
+        self.pae = build.load_pae(input_pae,symmetrize=True,colabfold=self.colabfold) / 10. # in nm
+        pae_sigm_factor = -self.pae_width*(self.pae-self.pae_shift)
         pae_sigm = np.exp(pae_sigm_factor) / (np.exp(pae_sigm_factor) + 1)
         # pae_inv = build.load_pae_inv(input_pae,colabfold=self.colabfold)
         # scaled_LJYU_pairlist = []
         self.scale = bfac_sigm * pae_sigm # restraint scale
         # self.bondscale = np.minimum(1.,np.maximum(0, 1. - 10.* (self.scale - min_scale))) # residual interactions for low restraints
         self.bondscale = np.exp(-bscale_width*(self.scale-bscale_shift)) / (np.exp(-bscale_width*(self.scale-bscale_shift)) + 1)
-        self.curate_bondscale()
+        # self.curate_bondscale()
 
-    def curate_bondscale(self, max_bscale = 0.95):
+    def curate_bondscale(self, max_bscale = 0.95, nlocal=4):
         for idx in range(self.nbeads):
-            lower = self.bondscale[idx,:idx-3]
-            higher = self.bondscale[idx,idx+4:]
-            if idx <= 3:
+            lower = self.bondscale[idx,:idx-nlocal]
+            higher = self.bondscale[idx,idx+nlocal+1:]
+            if idx <= nlocal:
                 others = higher
-            elif idx >= self.nbeads - 4:
+            elif idx >= self.nbeads - nlocal - 1:
                 others = lower
             else:
                 others = np.concatenate([lower, higher])
             count = np.sum(np.where(others < max_bscale,1,0)) # count how many nonlocal restraints
             # print(idx,count)
             if count == 0:
-                for jdx in range(max(0,idx-3),min(self.nbeads,idx+4)):
-                    self.bondscale[idx,jdx] = 1 # remove local restraints
-                    self.bondscale[jdx,idx] = 1 # remove local restraints
+                for jdx in range(max(0,idx-nlocal),min(self.nbeads,idx+nlocal+1)): 
+                    self.scale[idx,jdx] = 0. # remove local restraints
+                    self.scale[jdx,idx] = 0.
+                    self.bondscale[idx,jdx] = 1. 
+                    self.bondscale[jdx,idx] = 1. 
 
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
