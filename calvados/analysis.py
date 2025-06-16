@@ -836,6 +836,77 @@ class SlabAnalysis:
         cmtraj[0].save_pdb(f'{self.output_path}/{self.name}_com_top.pdb')
         cmtraj.save_dcd(f'{self.output_path}/{self.name}_com_traj.dcd')
 
+    def calc_aa_bins(self,step=1):
+        """ Calculate bins of amino acid positions. """
+
+        aminoacids = "ACDEFGHIKLMNPQRSTVWY"
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        self.bins = np.zeros((int(self.lz), 20))
+
+        if len(self.ag_ref_per_chain[0].names[0]) > 1: # three letter res
+            bead_names = [str(SeqUtils.seq1(s)) for s in self.ag_ref_per_chain[0].names]
+        else:
+            bead_names = [str(s) for s in self.ag_ref_per_chain[0].names]
+
+        aa_indices = tuple(int(aminoacids.index(aa)) for aa in bead_names)
+        # print(aa_indices)
+
+        for t, ts in tqdm(enumerate(self.u.trajectory[::step]), total=len(self.u.trajectory[::step])): 
+            for seg in self.ag_ref_per_chain:
+                bead_positions = seg.positions[:,2]
+                self.bins = self.aa_into_bins(self.bins, bead_positions, aa_indices, self.lz)
+        np.save(f'{self.output_path}/{self.name}_aa_bins.npy', self.bins)
+
+    @staticmethod
+    @nb.jit(nopython=True)
+    def aa_into_bins(bins, bead_positions, aa_indices, L):
+        for resid, bpos in enumerate(bead_positions):
+        # for bpos, aa_idx in zip(bead_positions, aa_indices):
+            aa_idx = aa_indices[resid]
+            # bpos = self.wrap_bead(bpos, L)
+            while (bpos >=  L) or (bpos < 0.):
+                bpos -= (bpos // L) *  L
+            bin_idx = int(bpos)
+            # aa_idx = int(aminoacids.index(aa))
+            bins[bin_idx, aa_idx] += 1
+        return bins
+
+    def calc_resid_bins(self,step=1):
+        """ Calculate bins of amino acid positions. """
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        nbeads = len(self.sg_ref[0].atoms) # nresidues
+        self.bins = np.zeros((int(self.lz), nbeads))
+
+        for t, ts in tqdm(enumerate(self.u.trajectory[::step]), total=len(self.u.trajectory[::step])):
+            for seg in self.ag_ref_per_chain:
+                bead_positions = seg.positions[:,2]
+                self.bins = self.resid_into_bins(self.bins, bead_positions, self.lz)
+        np.save(f'{self.output_path}/{self.name}_resid_bins.npy', self.bins)
+
+    @staticmethod
+    @nb.jit(nopython=True)
+    def resid_into_bins(bins, bead_positions, L):
+        for resid, bpos in enumerate(bead_positions):
+            while (bpos >=  L) or (bpos < 0.):
+                bpos -= (bpos // L) *  L
+            # bpos = self.wrap_bead(bpos, L)
+            bin_idx = int(bpos)
+            bins[bin_idx, resid] += 1
+        return bins
+
+    # @staticmethod
+    # @nb.jit(nopython=True)
+    # def wrap_bead(bpos, L):
+    #     while (bpos >=  L) or (bpos < 0.):
+    #         bpos -= (bpos // L) *  L
+    #     return bpos
+
     @staticmethod
     def calc_cos(a,b):
         cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
