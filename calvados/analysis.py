@@ -525,19 +525,6 @@ class SlabAnalysis:
         self.load_traj(centered=True, step=step)
         self.load_ref()
 
-        # u = mda.Universe(f'{self.input_path}/{self.input_pdb}', f'{self.input_path}/{self.centered_dcd}', in_memory=True)
-
-        # if self.ref_chains is None:
-        #     self.ref_chains = (0, len(u.segments)-1)
-        #     # ag_ref = u.atoms
-        #     # nbeads_ref = len(u.segments[0].atoms)
-        # # else:
-        # sg_ref = u.segments[self.ref_chains[0]:self.ref_chains[1]+1]
-        # ag_ref = sg_ref.atoms
-        # nbeads_ref = len(sg_ref[0].atoms)
-        # if self.verbose:
-        #     print(f'Reference: name {self.ref_name}; chains {self.ref_chains[0]}-{self.ref_chains[1]}; nbeads: {nbeads_ref}')
-
         n_frames = len(self.u.trajectory[start:end:step])
         binwidth = 1 # 0.1 nm
         volume = self.u.dimensions[0]*self.u.dimensions[1]*binwidth/1e3 # volume of a slice in nm3
@@ -545,9 +532,9 @@ class SlabAnalysis:
 
         # Reference profile
         h_ref = np.zeros((n_frames,self.n_bins))
-        for t,ts in enumerate(u.trajectory[start:end:step]):
-            ts = transformations.wrap(ag_ref)(ts)
-            zpos = ag_ref.positions.T[2]
+        for t,ts in enumerate(self.u.trajectory[start:end:step]):
+            ts = transformations.wrap(self.ag_ref)(ts)
+            zpos = self.ag_ref.positions.T[2]
             h, e = np.histogram(zpos,bins=self.edges)
             h_ref[t] = h * conv_ref # mM
         if save_individual_profiles:
@@ -587,7 +574,7 @@ class SlabAnalysis:
     def calc_concentrations(self,
             pden=2., pdil=8., dGmin=-10.,
             write_conc_arrays=True,
-            input_pdb='top.pdb',
+            # input_pdb='top.pdb',
             plot_profiles=True):
 
         self.pden, self.pdil = pden, pdil
@@ -597,7 +584,7 @@ class SlabAnalysis:
 
         # Reference concentrations
         if self.ref_chains is None:
-            u = mda.Universe(f'{self.input_path}/'+input_pdb)
+            u = mda.Universe(f'{self.input_path}/'+self.input_pdb)
             self.ref_chains = (0, len(u.segments)-1)
 
         h = np.load(f'{self.output_path}/{self.name}_{self.ref_name}_profile.npy')
