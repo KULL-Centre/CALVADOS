@@ -313,7 +313,6 @@ def geometry_from_pdb(pdb,use_com=False):
     box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
     return pos, box
 
-
 def geometry_from_pdb_rna(pdb,use_com=False):
     """ positions in nm"""
     backbone_atoms_name = [ "1H2'", "1H5'", "2H5'", "2HO'", "C1'",
@@ -350,8 +349,8 @@ def geometry_from_pdb_rna(pdb,use_com=False):
                 raise ValueError(f"Invalid RNA resname, {res.resname}")
         pos = np.array(pos)
 
-    return pos, u.dimensions
-
+    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
+    return pos, box
 
 def bfac_from_pdb(pdb,confidence=70.):
     """ get pLDDT encoded in pdb b-factor column """

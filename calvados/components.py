@@ -169,9 +169,7 @@ class Protein(Component):
         """ Protein properties. """
 
         super().calc_properties(pH=pH, verbose=verbose)
-        # fix mass of termini
-        self.mws[self.n_termini] += 2
-        self.mws[self.c_termini] += 16
+
         # fix charge and mw of termini
         if verbose:
             print(f'Adding charges for {self.charge_termini} termini of {self.name}.', flush=True)
@@ -582,7 +580,7 @@ class RNA(Component):
                 f.write(f'{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\t{b[5]}\n')
 
         with open(f'{path}/angles_{self.name}.txt','w') as f:
-            f.write('i\tj\tk\tb_idx\tsig\tlam\n')
+            f.write('i\tj\tk\ta_idx\ta[rad]\tk[kJ/mol/rad^2]\n')
             for b in self.angle_list:
                 f.write(f'{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{int(b[3])}\t{b[4]:.4f}\t{b[5]:.4f}\n')
 
