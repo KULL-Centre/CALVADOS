@@ -310,7 +310,8 @@ def geometry_from_pdb(pdb,use_com=False):
     else:
         cas = u.select_atoms('name CA')
         pos = cas.positions / 10.
-    return pos, u.dimensions
+    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
+    return pos, box
 
 def bfac_from_pdb(pdb,confidence=70.):
     """ get pLDDT encoded in pdb b-factor column """

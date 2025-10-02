@@ -139,6 +139,14 @@ def patch_terminal_qs(qs,n_termini,c_termini,loc='both'):
         qsnew[c_termini] -= qcoeff
     return qsnew
 
+def patch_terminal_mws(mws,n_termini,c_termini,loc='both'):
+    mwsnew = mws.copy()
+    if loc in ['N','both']:
+        mwsnew[n_termini] += 2
+    if loc in ['C','both']:
+        mwsnew[c_termini] += 16
+    return mwsnew
+
 def seq_dipole(seq):
     """ 1D charge dipole along seq """
     # print(seq)
@@ -750,7 +758,7 @@ class SeqFeatures:
 
             # q_intgrl_map = make_q_intgrl_map(residues)
             # self.q_ij = calc_q_ij(seq,q_intgrl_map)
-            
+
         if nu_file is not None:
             self.kappa = calc_kappa_manual(seq,residues=residues)
             if self.kappa == -1: # no charges

@@ -2,7 +2,6 @@
 molecule_type : 'protein'
 nmol : 1
 charge_termini : 'both'
-alpha: 0
 ffasta : 'fastabib.fasta'
 kb : 8033.0
 

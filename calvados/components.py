@@ -1,4 +1,4 @@
-from .sequence import seq_from_pdb, read_fasta, get_qs, patch_terminal_qs
+from .sequence import seq_from_pdb, read_fasta, get_qs, patch_terminal_qs, patch_terminal_mws
 from .analysis import self_distances
 from calvados import build, interactions
 
@@ -169,13 +169,12 @@ class Protein(Component):
         """ Protein properties. """
 
         super().calc_properties(pH=pH, verbose=verbose)
-        # fix mass of termini
-        self.mws[self.n_termini] += 2
-        self.mws[self.c_termini] += 16
-        # fix charge of termini
+
+        # fix charge and mw of termini
         if verbose:
             print(f'Adding charges for {self.charge_termini} termini of {self.name}.', flush=True)
         self.qs = patch_terminal_qs(self.qs,self.n_termini,self.c_termini,loc=self.charge_termini)
+        self.mws = patch_terminal_mws(self.mws,self.n_termini,self.c_termini,loc=self.charge_termini)
 
         if self.restraint:
             # self.init_restraint_force() # Done via sim.py
@@ -435,7 +434,7 @@ class RNA(Component):
                 f.write(f'{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\t{b[5]}\n')
 
         with open(f'{path}/angles_{self.name}.txt','w') as f:
-            f.write('i\tj\tk\tb_idx\tsig\tlam\n')
+            f.write('i\tj\tk\ta_idx\ta[rad]\tk[kJ/mol/rad^2]\n')
             for b in self.angle_list:
                 f.write(f'{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{int(b[3])}\t{b[4]:.4f}\t{b[5]:.4f}\n')
 
