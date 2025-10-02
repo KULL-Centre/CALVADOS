@@ -396,8 +396,8 @@ class Sim:
                 else:
                     self.cos.addParticle([sig*unit.nanometer, lam, 1])
         # Add Debye-Huckel
-        for q in comp.qs:
-            self.yu.addParticle([q])
+        for q, alpha in zip(comp.qs, comp.alphas):
+            self.yu.addParticle([q, alpha*unit.nanometer**3])
 
         # Add Charge-Nonpolar Interaction
         if self.nlipids > 0 or self.ncookelipids > 0:

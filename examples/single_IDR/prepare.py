@@ -12,14 +12,16 @@ args = parser.parse_args()
 cwd = os.getcwd()
 sysname = f'{args.name:s}'
 
+prot = pd.read_csv('exp_rg_data.csv',index_col=0).loc[args.name]
+
 # set the side length of the cubic box
-L = 50
+L = 200
 
 # set the saving interval (number of integration steps)
-N_save = 7000
+N_save = 7000 if prot.N < 150 else int(np.ceil(3e-4*prot.N**2)*1000)
 
 # set final number of frames to save
-N_frames = 1010
+N_frames = 2010
 
 residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 
@@ -36,7 +38,7 @@ config = Config(
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
   runtime = 0, # overwrites 'steps' keyword if > 0
-  platform = 'CPU', # or CUDA
+  platform = 'OpenCL', # or CUDA
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,

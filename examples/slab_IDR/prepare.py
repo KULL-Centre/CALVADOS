@@ -21,7 +21,7 @@ residues_file = f'{cwd}/input/residues_CALVADOS2.csv'
 config = Config(
   # GENERAL
   sysname = sysname, # name of simulation system
-  box = [15, 15, 150.], # nm
+  box = [20, 20, 200.], # nm
   temp = 293,
   ionic = 0.15, # molar
   pH = 7,

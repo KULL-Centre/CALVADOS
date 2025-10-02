@@ -46,12 +46,14 @@ def init_ah_interactions(eps,rc,fixed_lambda):
 def init_yu_interactions(eps, k, rc):
     """ Define Yukawa interactions. """
 
-    shift = np.exp(-k*rc)/rc
-    yu = openmm.CustomNonbondedForce(f'q*{eps}*(exp(-{k}*r)/r-{shift}); q=q1*q2')
+    shift_1 = np.exp(-k*rc)/rc
+    shift_2 = np.power(1/rc/rc-k/rc,2)*np.exp(-2*k*rc)
+    yu = openmm.CustomNonbondedForce(f'q*{eps}*(exp(-{k}*r)/r-{shift_1})-{eps/2}*(alpha2*q1^2+alpha1*q2^2)*((1/r^2-{k}/r)^2*exp(-2*{k}*r)-{shift_2}); q=q1*q2')
     yu.addPerParticleParameter('q')
+    yu.addPerParticleParameter('alpha')
 
     print('Debye-Hückel potential between unit charges at',rc*unit.nanometer,end=': ')
-    print(eps*shift*unit.kilojoules_per_mole)
+    print(eps*shift_1*unit.kilojoules_per_mole)
 
     yu.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
     yu.setCutoffDistance(rc*unit.nanometer)

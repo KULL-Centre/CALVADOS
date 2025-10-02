@@ -51,7 +51,7 @@ class Component:
         self.bondlengths = np.array([self.residues.loc[s].bondlength for s in self.seq])
         self.mws = np.array([self.residues.loc[s].MW for s in self.seq])
         self.qs, _ = get_qs(self.seq,flexhis=True,pH=pH,residues=self.residues)
-        self.alphas = self.lambdas*self.alpha
+        self.alphas = np.array([self.residues.loc[s].alphas for s in self.seq])
         self.init_bond_force()
 
     def calc_dmap(self):
@@ -159,11 +159,11 @@ class Protein(Component):
     #         count = np.sum(np.where(others < max_bscale,1,0)) # count how many nonlocal restraints
     #         # print(idx,count)
     #         if count == 0:
-    #             for jdx in range(max(0,idx-nlocal),min(self.nbeads,idx+nlocal+1)): 
+    #             for jdx in range(max(0,idx-nlocal),min(self.nbeads,idx+nlocal+1)):
     #                 self.scale[idx,jdx] = 0. # remove local restraints
     #                 self.scale[jdx,idx] = 0.
-    #                 self.bondscale[idx,jdx] = 1. 
-    #                 self.bondscale[jdx,idx] = 1. 
+    #                 self.bondscale[idx,jdx] = 1.
+    #                 self.bondscale[jdx,idx] = 1.
 
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
@@ -316,7 +316,6 @@ class RNA(Component):
         self.bondlengths = np.array([self.residues.loc[s].bondlength for s in self.seq2])
         self.mws = np.array([self.residues.loc[s].MW for s in self.seq2])
         self.qs, _ = get_qs(self.seq2,flexhis=True,pH=pH,residues=self.residues)
-        self.alphas = self.lambdas*self.alpha
 
         self.calc_x_setup(comp_setup=comp_setup, d=0.58, n_per_res=2)
         self.init_bond_force()
@@ -586,7 +585,7 @@ class PTMProtein(Protein):
         # residue-residue bond (protein)
         if (i < self.nbeads_protein - 1) and (j == i+1):
             return True
-        
+
         ptm_seqlocs = []
         # residue-PTM bond
         for idx, ptm_loc in enumerate(self.ptm_locations):
@@ -594,7 +593,7 @@ class PTMProtein(Protein):
             ptm_seqlocs.append(ptm_seqloc)
             if (i == ptm_loc - 1) and (j == ptm_seqloc):
                 return True
-        
+
         # PTM-PTM bond
         if i >= self.nbeads_protein:
             if (j == i+1) and (j not in ptm_seqlocs): # avoid bonding different PTMs
