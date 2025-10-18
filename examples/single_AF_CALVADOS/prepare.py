@@ -13,10 +13,10 @@ cwd = os.getcwd()
 sysname = f'{args.name:s}'
 
 # set the side length of the cubic box
-L = 25
+L = 50
 
 # set the saving interval (number of integration steps)
-N_save = 100
+N_save = 7000
 
 # set final number of frames to save
 N_frames = 1000
@@ -61,7 +61,7 @@ components = Components(
   restraint_type = 'go', # harmonic or go
   use_com = True, # apply on centers of mass instead of CA
   colabfold = 0, # PAE format (EBI AF=0, Colabfold=1&2)
-  k_go = 10., # Restraint force constant
+  k_go = 15., # Restraint force constant
 )
 components.add(name=args.name)
 

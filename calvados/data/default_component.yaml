@@ -13,15 +13,15 @@ pdb_folder : 'pdbs'
 restraint_type : 'harmonic'
 k_harmonic : 700.
 fdomains : 'domains.yaml'
-k_go : 10.
+k_go : 15.
 use_com : true
 periodic: false
 
 colabfold : 0
 bfac_shift : 0.8
 bfac_width : 50.
-pae_shift : 0.4
-pae_width : 8.
+pae_shift : 0.3
+pae_width : 15.
 
 rna_kb1 : 8033.0
 rna_kb2 : 8033.0
