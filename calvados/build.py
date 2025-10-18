@@ -310,7 +310,47 @@ def geometry_from_pdb(pdb,use_com=False):
     else:
         cas = u.select_atoms('name CA')
         pos = cas.positions / 10.
-    return pos, u.dimensions
+    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
+    return pos, box
+
+def geometry_from_pdb_rna(pdb,use_com=False):
+    """ positions in nm"""
+    backbone_atoms_name = [ "1H2'", "1H5'", "2H5'", "2HO'", "C1'",
+                            "C2'",   "C3'",  "C4'",  "C5'", "H1'",
+                            "H3'",   "H4'",  "O2'",  "O3'", "O5'",
+                            "O4'",   "OP1",  "OP2",  "P"  ]
+
+    with catch_warnings():
+        simplefilter("ignore")
+        u = Universe(pdb)
+    ag = u.atoms
+    ag.translate(-ag.center_of_mass())
+    if use_com:
+        pos = []
+        for res in u.residues:
+            backbone = res.atoms.select_atoms('name ' + ' '.join(backbone_atoms_name))
+            non_backbone = res.atoms.difference(backbone)
+            pos.append(backbone.center_of_mass())
+            pos.append(non_backbone.center_of_mass())
+        pos = np.array(pos) / 10.
+
+    else:
+        pos =  []
+        for res in u.residues:
+            ps = res.atoms.select_atoms('name P')
+            pos.append(ps.positions[0] / 10.)
+            if res.resname in ['U','C']:
+                ns = res.atoms.select_atoms('name N1')
+                pos.append(ns.positions[0] / 10.)
+            elif res.resname in ['A','G']:
+                ns = res.atoms.select_atoms('name N9')
+                pos.append(ns.positions[0] / 10.)
+            else:
+                raise ValueError(f"Invalid RNA resname, {res.resname}")
+        pos = np.array(pos)
+
+    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
+    return pos, box
 
 def bfac_from_pdb(pdb,confidence=70.):
     """ get pLDDT encoded in pdb b-factor column """

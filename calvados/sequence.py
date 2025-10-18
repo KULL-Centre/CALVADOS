@@ -1,6 +1,8 @@
 import numpy as np
 
 from MDAnalysis import Universe
+from MDAnalysis.lib.util import convert_aa_code
+
 
 import random
 
@@ -9,6 +11,7 @@ from re import findall
 from Bio import SeqIO, SeqUtils
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+
 
 import os
 
@@ -52,7 +55,7 @@ def seq_from_pdb(pdb,selection='all',fmt='string'):
     res3 = ag.residues.resnames
     for res in res3:
         if len(res) == 3:
-            res1 = SeqUtils.seq1(res)
+            res1 = convert_aa_code(res)
         else:
             res1 = res
         if res1 == "":
@@ -135,6 +138,14 @@ def patch_terminal_qs(qs,n_termini,c_termini,loc='both'):
     if loc in ['C','both']:
         qsnew[c_termini] -= qcoeff
     return qsnew
+
+def patch_terminal_mws(mws,n_termini,c_termini,loc='both'):
+    mwsnew = mws.copy()
+    if loc in ['N','both']:
+        mwsnew[n_termini] += 2
+    if loc in ['C','both']:
+        mwsnew[c_termini] += 16
+    return mwsnew
 
 def seq_dipole(seq):
     """ 1D charge dipole along seq """
@@ -747,7 +758,7 @@ class SeqFeatures:
 
             # q_intgrl_map = make_q_intgrl_map(residues)
             # self.q_ij = calc_q_ij(seq,q_intgrl_map)
-            
+
         if nu_file is not None:
             self.kappa = calc_kappa_manual(seq,residues=residues)
             if self.kappa == -1: # no charges
