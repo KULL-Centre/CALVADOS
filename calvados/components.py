@@ -112,11 +112,17 @@ class Protein(Component):
     def __init__(self, name: str, comp_dict: dict, defaults: dict):
         super().__init__(name, comp_dict, defaults)
 
-    def calc_x_from_pdb(self):
+    def calc_x_from_pdb(self, verbose: bool = False):
         """ Calculate protein positions from pdb. """
 
         input_pdb = f'{self.pdb_folder}/{self.name}.pdb'
-        self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdb
+        if(hasattr(self, 'dimensions')):
+            self.xinit, _ = build.geometry_from_pdb(input_pdb, use_com=self.use_com, auto_box_margin=-1, verbose=verbose) # read from pdb
+            if(self.to_check_box > 0):
+                backbone_Xrange = np.amax(self.xinit, axis=0) - np.amin(self.xinit, axis=0)
+                assert(np.all(backbone_Xrange < np.array(self.dimensions[:3]))), f'ERROR: X-range from the PDB "{input_pdb}" is ({backbone_Xrange[0], backbone_Xrange[1], backbone_Xrange[2]})[A], which does not fit into the provided box ({box[0], box[1], box[2]})[A]'
+        else:
+            self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb, use_com=self.use_com, verbose=verbose)
 
     def calc_ssdomains(self):
         """ Get bounds for restraints (harmonic). """
@@ -167,7 +173,6 @@ class Protein(Component):
 
     def calc_properties(self, pH: float = 7.0, verbose: bool = False, comp_setup: str = 'spiral'):
         """ Protein properties. """
-
         super().calc_properties(pH=pH, verbose=verbose)
 
         # fix charge and mw of termini
@@ -178,7 +183,7 @@ class Protein(Component):
 
         if self.restraint:
             # self.init_restraint_force() # Done via sim.py
-            self.calc_x_from_pdb()
+            self.calc_x_from_pdb(verbose=verbose)
             self.calc_dmap()
             if self.restraint_type == 'harmonic':
                 self.calc_ssdomains()

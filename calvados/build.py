@@ -294,7 +294,7 @@ def build_xyzgrid(N,box):
     return xyz
 
 # FOLDED
-def geometry_from_pdb(pdb,use_com=False):
+def geometry_from_pdb(pdb, use_com=False, auto_box_margin=100., verbose=1):   # [A]
     """ positions in nm"""
     with catch_warnings():
         simplefilter("ignore")
@@ -310,7 +310,19 @@ def geometry_from_pdb(pdb,use_com=False):
     else:
         cas = u.select_atoms('name CA')
         pos = cas.positions / 10.
-    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
+    
+    if(u.dimensions is None):   # the case when .pdb does not provide CRYST cell
+        if(auto_box_margin >= 0):
+            if(verbose > 0):
+                print(f'WARNING: did not find dimensions in PDB: {pdb}, automatically setting the box to the X-range + margin={auto_box_margin}[A]')
+            pos_size = np.amax(ag.positions, axis=0) - np.amin(ag.positions, axis=0)
+            u.dimensions = [pos_size[0] + auto_box_margin, pos_size[1] + auto_box_margin, pos_size[2] + auto_box_margin, 90, 90, 90]
+    
+    if(u.dimensions is None):
+        box = None
+    else:
+        box = np.append(u.dimensions[:3]/10., u.dimensions[3:])
+    
     return pos, box
 
 def geometry_from_pdb_rna(pdb,use_com=False):

@@ -35,6 +35,9 @@ class Sim:
         self.comp_defaults = components['defaults']
 
         self.box = np.array(self.box)
+        if('dimensions' not in self.comp_defaults):   # Protein has attr 'dimensions', not 'box'
+            self.comp_defaults['dimensions'] = list(self.box) + [90.] * 3
+            self.comp_defaults['to_check_box'] = 1
         self.eps_lj *= 4.184 # kcal to kJ/mol
 
         if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
@@ -140,7 +143,6 @@ class Sim:
         self.system = openmm.System()
         a, b, c = build.build_box(self.box[0],self.box[1],self.box[2])
         self.system.setDefaultPeriodicBoxVectors(a, b, c)
-
 
         # init interaction parameters (required before make components)
         self.eps_yu, self.k_yu = interactions.genParamsDH(self.temp,self.ionic)
