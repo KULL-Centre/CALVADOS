@@ -310,7 +310,10 @@ def geometry_from_pdb(pdb,use_com=False):
     else:
         cas = u.select_atoms('name CA')
         pos = cas.positions / 10.
-    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
+    if u.dimensions is None:
+        box = None
+    else:
+        box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
     return pos, box
 
 def geometry_from_pdb_rna(pdb,use_com=False):
