@@ -8,6 +8,8 @@ from openmm import unit
 
 import numpy as np
 
+import os
+
 class Component:
     """ Generic component of the system. """
 
@@ -116,7 +118,12 @@ class Protein(Component):
         """ Calculate protein positions from pdb. """
 
         input_pdb = f'{self.pdb_folder}/{self.name}.pdb'
-        self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdb
+        input_pdbx = f'{self.pdb_folder}/{self.name}.cif'
+
+        if os.path.isfile(input_pdb):
+            self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdb
+        else:
+            self.vxinit, self.dimensions = build.geometry_from_pdb(input_pdbx,use_com=self.use_com) # read from pdbx
 
     def calc_ssdomains(self):
         """ Get bounds for restraints (harmonic). """

@@ -1,7 +1,7 @@
 from scipy import constants
 import numpy as np
 import pandas as pd
-from openmm import unit
+from openmm import app, unit
 
 from MDAnalysis import Universe
 from MDAnalysis.analysis import distances
@@ -298,7 +298,11 @@ def geometry_from_pdb(pdb,use_com=False):
     """ positions in nm"""
     with catch_warnings():
         simplefilter("ignore")
-        u = Universe(pdb)
+        if pdb.lower().endswith('.cif'):
+            pdbx = app.pdbxfile.PDBxFile(pdb)
+            u = Universe(pdbx)
+        else:
+            u = Universe(pdb)
     ag = u.atoms
     ag.translate(-ag.center_of_mass())
     if use_com:

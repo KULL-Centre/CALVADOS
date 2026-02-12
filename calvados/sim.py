@@ -215,9 +215,11 @@ class Sim:
             self.add_custom_restraints()
 
         self.pdb_cg = f'{self.path}/top.pdb'
+        self.cif_cg = f'{self.path}/top.cif'
         a = md.Trajectory(self.pos, self.top, 0, self.box, [90,90,90])
         if self.restart != 'pdb': # only save new topology if no system pdb is given
             a.save_pdb(self.pdb_cg)
+            a.save_cif(self.cif_cg)
 
         self.add_forces_to_system()
         self.print_system_summary()
@@ -507,10 +509,16 @@ class Sim:
         fcheck_out = f'{self.path}/restart.chk'
         append = False
 
-        if self.restart == 'pdb' and os.path.isfile(fcheck_in):
-            pdb = app.pdbfile.PDBFile(fcheck_in)
-        else:
-            pdb = app.pdbfile.PDBFile(self.pdb_cg)
+        if self.restart == 'pdb':
+            if os.path.isfile(fcheck_in):
+                pdb = app.pdbfile.PDBFile(fcheck_in)
+            else:
+                pdb = app.pdbfile.PDBFile(self.pdb_cg)
+        elif self.restart == 'cif':
+            if os.path.isfile(fcheck_in):
+                pdb = app.pdbxfile.PDBxFile(fcheck_in)
+            else:
+                pdb = app.pdbxfile.PDBxFile(self.cif_cg)
 
         # use langevin integrator
         integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
@@ -537,7 +545,7 @@ class Sim:
             print(f'Appending log file to {self.path}/{self.sysname:s}.log')
             simulation.loadCheckpoint(fcheck_in)
         else:
-            if self.restart == 'pdb':
+            if self.restart in ['pdb','cif']:
                 print(f'Reading in system configuration {self.frestart}')
             elif self.restart == 'checkpoint':
                 print(f'No checkpoint file {self.frestart} found: Starting from new system configuration')
@@ -561,9 +569,11 @@ class Sim:
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
             state_final = simulation.context.getState(getPositions=True)
-            rep = app.pdbreporter.PDBReporter(f'{self.path}/equilibration_final.pdb',0)
-            rep.report(simulation,state_final)
-            pdb = app.pdbfile.PDBFile(f'{self.path}/equilibration_final.pdb')
+            with open(f'{self.path}/equilibration_final.pdb', 'w') as f:
+                app.PDBFile.writeFile(simulation.topology, state_final.getPositions(), f)
+            with open(f'{self.path}/equilibration_final.cif', 'w') as f:
+                app.PDBxFile.writeFile(simulation.topology, state_final.getPositions(), f)
+            pdb = app.pdbxfile.PDBxFile(f'{self.path}/equilibration_final.cif')
 
             for index, force in enumerate(self.system.getForces()):
                 if isinstance(force, openmm.CustomExternalForce):
@@ -584,9 +594,11 @@ class Sim:
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
             simulation.step(self.steps_eq)
             state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
-            rep = app.pdbreporter.PDBReporter(f'{self.path}/equilibration_final.pdb',0)
-            rep.report(simulation,state_final)
-            pdb = app.pdbfile.PDBFile(f'{self.path}/equilibration_final.pdb')
+            with open(f'{self.path}/equilibration_final.pdb', 'w') as f:
+                app.PDBFile.writeFile(simulation.topology, state_final.getPositions(), f)
+            with open(f'{self.path}/equilibration_final.cif', 'w') as f:
+                app.PDBxFile.writeFile(simulation.topology, state_final.getPositions(), f)
+            pdb = app.pdbxfile.PDBxFile(f'{self.path}/equilibration_final.cif')
             topology = pdb.getTopology()
             a, b, c = state_final.getPeriodicBoxVectors()
             topology.setPeriodicBoxVectors(state_final.getPeriodicBoxVectors())
@@ -632,10 +644,10 @@ class Sim:
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
         state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
-        rep = app.pdbreporter.PDBReporter(f'{self.path}/{self.sysname}_{dt_string}.pdb',0)
-        rep.report(simulation,state_final)
-        rep = app.pdbreporter.PDBReporter(f'{self.path}/checkpoint.pdb',0)
-        rep.report(simulation,state_final)
+        with open(f'{self.path}/checkpoint.pdb', 'w') as f:
+            app.PDBFile.writeFile(simulation.topology, state_final.getPositions(), f)
+        with open(f'{self.path}/checkpoint.cif', 'w') as f:
+            app.PDBxFile.writeFile(simulation.topology, state_final.getPositions(), f)
 
 def run(path='.',fconfig='config.yaml',fcomponents='components.yaml'):
     with open(f'{path}/{fconfig}','r') as stream:
