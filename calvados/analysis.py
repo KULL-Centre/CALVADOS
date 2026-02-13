@@ -922,6 +922,11 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         name_2 = name_1
         chainid_dict[name_1] = np.arange(traj.top.n_chains)
 
+    print(name_1)
+    print(chainid_dict[name_1])
+    print(name_2)
+    print(chainid_dict[name_2])
+
     N_res_1 = traj.top.chain(chainid_dict[name_1][0]).n_residues
     N_res_2 = traj.top.chain(chainid_dict[name_2][0]).n_residues
 
@@ -950,7 +955,8 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
             chainid_dict[name_2] = chainid_dict[name_1]
         cm_z = cmtraj.xyz[:,chainid_dict[name_1],2]
         # per-frame central-chain indices
-        chainid_dict[name_1] = np.argmin(np.abs(cm_z),axis=1)
+        ids_central = np.argmin(np.abs(cm_z),axis=1)
+        chainid_dict[name_1] = np.array([chainid_dict[name_1][idx] for idx in ids_central])
 
     cmap = np.zeros((N_res_1,N_res_2))
     for chain_1 in np.unique(chainid_dict[name_1]):
