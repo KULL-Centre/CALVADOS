@@ -35,7 +35,12 @@ class Component:
         """ Calculate sequence of component. """
 
         if self.restraint:
-            self.seq, self.n_termini, self.c_termini = seq_from_pdb(f'{self.pdb_folder}/{self.name}.pdb')
+            input_pdb = f'{self.pdb_folder}/{self.name}.pdb'
+            input_pdbx = f'{self.pdb_folder}/{self.name}.cif'
+            if os.path.isfile(input_pdbx):
+                self.seq, self.n_termini, self.c_termini = seq_from_pdb(input_pdbx)
+            else:
+                self.seq, self.n_termini, self.c_termini = seq_from_pdb(input_pdb)
         else:
             records = read_fasta(self.ffasta)
             self.seq = str(records[self.name].seq)
@@ -120,10 +125,10 @@ class Protein(Component):
         input_pdb = f'{self.pdb_folder}/{self.name}.pdb'
         input_pdbx = f'{self.pdb_folder}/{self.name}.cif'
 
-        if os.path.isfile(input_pdb):
-            self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdb
+        if os.path.isfile(input_pdbx):
+            self.xinit, self.dimensions = build.geometry_from_pdb(input_pdbx,use_com=self.use_com) # read from pdb
         else:
-            self.vxinit, self.dimensions = build.geometry_from_pdb(input_pdbx,use_com=self.use_com) # read from pdbx
+            self.xinit, self.dimensions = build.geometry_from_pdb(input_pdb,use_com=self.use_com) # read from pdbx
 
     def calc_ssdomains(self):
         """ Get bounds for restraints (harmonic). """
