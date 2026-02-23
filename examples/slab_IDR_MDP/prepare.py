@@ -68,6 +68,10 @@ calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",chaini
 # calculate contact map between name_1 and name_1
 chainid_dict = dict({args.name_1:s} = (0,99))
 calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",chainid_dict=chainid_dict,is_slab=True)
+
+# calculate contact map between name_2 and name_2 (note that this is not always meaningful)
+# chainid_dict = dict({args.name_2:s} = (100,199))
+# calc_contact_map(path="{path:s}",sysname="{sysname:s}",output_path="data",chainid_dict=chainid_dict,is_slab=True)
 """
 
 config.write(path,name='config.yaml',analyses=analyses)
