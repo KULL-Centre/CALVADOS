@@ -524,6 +524,8 @@ class Sim:
                 pdb = app.pdbxfile.PDBxFile(fcheck_in)
             else:
                 pdb = app.pdbxfile.PDBxFile(self.cif_cg)
+        else:
+            pdb = app.pdbxfile.PDBxFile(self.cif_cg)
 
         # use langevin integrator
         integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
