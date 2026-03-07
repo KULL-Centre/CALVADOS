@@ -43,7 +43,6 @@ conda install -c conda-forge openmm=8.2.0 mdanalysis=2.9 mdtraj=1.11
 ``` 
 git clone https://github.com/KULL-Centre/CALVADOS.git
 cd CALVADOS
-git checkout pdbx
 pip install .
 (or pip install -e .)
 ```
