@@ -1,7 +1,7 @@
 from scipy import constants
 import numpy as np
 import pandas as pd
-from openmm import unit
+from openmm import app, unit
 
 from MDAnalysis import Universe
 from MDAnalysis.analysis import distances
@@ -223,17 +223,17 @@ def build_xyzgrid(N,box):
     """ 3D grid """
 
     r = box / np.sum(box)
-    a = np.cbrt(N / np.product(r))
+    a = np.cbrt(N / np.prod(r))
     n = a * r
     nxyz = np.floor(n)
-    while np.product(nxyz) < N:
+    while np.prod(nxyz) < N:
         ndeviation = n / nxyz
         devmax = np.argmax(ndeviation)
         nxyz[devmax] += 1
-    while np.product(nxyz) > N:
+    while np.prod(nxyz) > N:
         nmax = np.argmax(nxyz)
         nxyz[nmax] -= 1
-        if np.product(nxyz) < N:
+        if np.prod(nxyz) < N:
             nxyz[nmax] += 1
             break
 
@@ -298,7 +298,11 @@ def geometry_from_pdb(pdb,use_com=False):
     """ positions in nm"""
     with catch_warnings():
         simplefilter("ignore")
-        u = Universe(pdb)
+        if pdb.lower().endswith('.cif'):
+            pdbx = app.pdbxfile.PDBxFile(pdb)
+            u = Universe(pdbx)
+        else:
+            u = Universe(pdb)
     ag = u.atoms
     ag.translate(-ag.center_of_mass())
     if use_com:
