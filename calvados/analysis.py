@@ -28,9 +28,7 @@ from main import BlockAnalysis
 
 def center_traj(pdb,traj,start=None,stop=None,step=1):
     """ Center trajectory """
-
     u = mda.Universe(pdb,traj)
-
     with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
         for ts in u.trajectory[start:stop:step]:
             u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
@@ -922,11 +920,6 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         name_2 = name_1
         chainid_dict[name_1] = np.arange(traj.top.n_chains)
 
-    print(name_1)
-    print(chainid_dict[name_1])
-    print(name_2)
-    print(chainid_dict[name_2])
-
     N_res_1 = traj.top.chain(chainid_dict[name_1][0]).n_residues
     N_res_2 = traj.top.chain(chainid_dict[name_2][0]).n_residues
 
@@ -955,23 +948,20 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
             chainid_dict[name_2] = chainid_dict[name_1]
         cm_z = cmtraj.xyz[:,chainid_dict[name_1],2]
         # per-frame central-chain indices
-        ids_central = np.argmin(np.abs(cm_z),axis=1)
-        chainid_dict[name_1] = np.array([chainid_dict[name_1][idx] for idx in ids_central])
+        chainid_dict[name_1] = np.argmin(np.abs(cm_z),axis=1)
 
     cmap = np.zeros((N_res_1,N_res_2))
     for chain_1 in np.unique(chainid_dict[name_1]):
         surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in chainid_dict[name_2] if i != chain_1]))
         pair_indices = traj.top.select_pairs(f'chainid {chain_1:d}',surrounding_chains)
         if is_slab:
-            mask_frames = np.where(chainid_dict[name_1] == chain_1)[0]
+            mask_frames = chainid_dict[name_1] == chain_1
         else:
-            mask_frames = np.arange(traj.n_frames)#, True, dtype=bool)
-        if len(mask_frames) > 0:
-            for mf in mask_frames:
-                d = md.compute_distances(traj[mf],pair_indices)[0]
-                cm = (.5-.5*np.tanh((d-1.)/.3)).reshape(N_res_1,-1,N_res_2)
-                cm = np.sum(cm,axis=1)
-                cmap += cm
+            mask_frames = np.full(traj.n_frames, True, dtype=bool)
+        if np.any(mask_frames):
+            d = md.compute_distances(traj[mask_frames],pair_indices)
+            cmap += (.5-.5*np.tanh((d-1.)/.3)).reshape(mask_frames.sum(),
+                        N_res_1,-1,N_res_2).sum(axis=0).sum(axis=1)
     cmap /= traj.n_frames
 
     # save energy and contact maps

@@ -11,7 +11,7 @@ except FileNotFoundError:
 
 setup(
     name='calvados',
-    version='0.8.0',
+    version='0.8.1',
     description='Coarse-grained implicit-solvent simulations of biomolecules',
     url='https://github.com/KULL-Centre/CALVADOS',
     authors=[
@@ -23,6 +23,9 @@ setup(
     license='GNU GPL3',
     packages=find_packages(),
     install_requires=[
+        "OpenMM>=8.4,<8.5",
+        "MDAnalysis>=2.10,<2.11",
+        "mdtraj>=1.11,<1.12",
         'numpy',
         'pandas',
         'biopython',
@@ -36,6 +39,7 @@ setup(
         'numba',
         'scipy'
     ],
+    python_requires=">=3.13,<3.14",
 
     # include_package_data=True,
     package_data={'' : ['data/*.csv', 'data/*.yaml', 'data/templates/*']},
@@ -43,6 +47,6 @@ setup(
     classifiers=[
         'Intended Audience :: Science/Research',
         'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python :: 3>=3.7,<3.11',
+        'Programming Language :: Python :: 3.13',
     ],
 )
