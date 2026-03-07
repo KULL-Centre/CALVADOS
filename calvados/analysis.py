@@ -965,14 +965,14 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         if is_slab:
             mask_frames = np.where(chainid_dict[name_1] == chain_1)[0]
         else:
-            mask_frames = np.arange(traj.n_frames)
+            mask_frames = np.arange(traj.n_frames)#, True, dtype=bool)
         if len(mask_frames) > 0:
             for mf in mask_frames:
                 d = md.compute_distances(traj[mf],pair_indices)[0]
                 cm = (.5-.5*np.tanh((d-1.)/.3)).reshape(N_res_1,-1,N_res_2)
                 cm = np.sum(cm,axis=1)
                 cmap += cm
-
     cmap /= traj.n_frames
+
     # save energy and contact maps
     np.save(output_path+f'/{sysname:s}_{name_1:s}_{name_2:s}_cmap.npy',cmap)
