@@ -10,8 +10,8 @@ except FileNotFoundError:
     subprocess.run(['curl','-o','calvados/BLOCKING/block_tools.py','https://raw.githubusercontent.com/fpesceKU/BLOCKING/v0.1/block_tools.py'])
 
 setup(
-    name='calvados',
-    version='0.8.0',
+    name='mem-calvados',
+    version='1.0.0',
     description='Coarse-grained implicit-solvent simulations of biomolecules',
     url='https://github.com/KULL-Centre/CALVADOS',
     authors=[

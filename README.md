@@ -1,6 +1,6 @@
 # MEM-CALVADOS
 
-This repository contains a branch of the CALVADOS package that implements the MEM-CALVADOS model for flexible proteins at membrane interfaces.
+This repository contains a branch of the CALVADOS package that implements the MEM-CALVADOS model (v1) for flexible proteins at membrane interfaces.
 
 Please cite the following references when using the software:
 
