@@ -16,6 +16,7 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.stats import sem
 
 from calvados.build import get_ssdomains
+from itertools import combinations
 
 import matplotlib.pyplot as plt
 
@@ -28,9 +29,9 @@ from main import BlockAnalysis
 
 def center_traj(pdb,traj,start=None,stop=None,step=1):
     """ Center trajectory """
-  
+
     u = mda.Universe(pdb,traj)
-    
+
     with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
         for ts in u.trajectory[start:stop:step]:
             u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
@@ -790,6 +791,164 @@ class SlabAnalysis:
 
         return eden, edil
 
+def calc_com_profiles(path,sysname,output_path,residues_file,chainid_dict={},start=None,end=None,step=1,input_pdb='top.pdb'):
+    """
+    Calculate profiles as a function of the z-coordinate of the COM.
+
+    Parameters:
+    -----------
+    chainid_dict : dict
+        Examples:
+            {'name_1': 0, 'name_2': 1}
+            {'name_1': (0, 99), 'name_2': (100, 199)}
+        - Keys are component names.
+        - Values are integers or tuples representing the first and last chain IDs.
+
+        The dictionary can contains as many entries as the number of components in the system.
+
+        If the dictionary is not provided as an argument, the function assumes a
+        single-component system named `sysname` and calculates profiles for all the chains in the topology.
+    """
+
+    if not os.path.isfile(f'{path:s}/traj.dcd'):
+        u = mda.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{sysname:s}.dcd',in_memory=True)
+        ag = u.select_atoms('all')
+        n_atoms = ag.n_atoms
+        # create list of bonds
+        bonds = []
+        for segment in u.segments:
+            for i in segment.atoms.indices[:-1]:
+                bonds.extend([(i, i+1)])
+        u.add_TopologyAttr('bonds', bonds)
+        with mda.Writer(f'{path:s}/traj.dcd',n_atoms) as W:
+            for t,ts in enumerate(u.trajectory[start:end:step]):
+                # make chains whole
+                ts = transformations.unwrap(ag)(ts)
+                W.write(ag)
+
+    traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
+    lz_variable = traj.unitcell_lengths[:, 2]
+    np.save(output_path+f'/{sysname:s}_lx.npy',traj.unitcell_lengths[:, 0])
+
+    if len(chainid_dict) == 0:
+        chainid_dict[sysname] = (0, traj.top.n_chains-1)
+
+    residues = pd.read_csv(residues_file, index_col='three')
+
+    s = md.load_pdb(f'{path:s}/'+input_pdb)
+    half_lz = s.unitcell_lengths[0,2]/2
+    traj.xyz -= half_lz
+    binwidth = 0.1 # nm
+    volume = s.unitcell_lengths[0,0]*s.unitcell_lengths[0,1]*binwidth # volume of a slice in nm3
+    conv_to_mM = 10/6.02214/volume*1e3 # conversion to mM
+    edges = np.arange(-half_lz,half_lz+binwidth,binwidth)
+    z = edges[:-1]+binwidth/2.
+
+    chain_prop = {}
+    n_chains = 0
+    for chain_name, chainids in chainid_dict.items():
+        chain_prop[chain_name] = {}
+        if type(chainids) is int:
+            chainids = (chainids, chainids)
+        seq = [res.name for res in traj.top.chain(chainids[0]).residues]
+        mws = residues.loc[seq,'MW'].values
+        mws[0] += 2
+        mws[-1] += 16
+        chain_prop[chain_name]['ids'] = np.arange(chainids[0],chainids[1]+1)
+        n_chains += chain_prop[chain_name]['ids'].size
+        chain_prop[chain_name]['N'] = len(seq)
+        chain_prop[chain_name]['MWs'] = mws
+        chain_prop[chain_name]['z'] = z
+
+    # calculate traj of chain COM
+    for chain_name in chain_prop.keys():
+        hist_com = np.zeros(edges.size-1)
+        hist_rg = np.zeros(edges.size-1)
+        hist_ree = np.zeros(edges.size-1)
+        hist_cos = np.zeros(edges.size-1)
+        for chainid in chain_prop[chain_name]['ids']:
+            mws = chain_prop[chain_name]['MWs']
+            t_chain = traj.atom_slice(traj.top.select(f'chainid {chainid:d}'))
+            com = np.sum(t_chain.xyz*mws[np.newaxis,:,np.newaxis],axis=1)/mws.sum()
+            # calculate residue-cm distances
+            si = t_chain.xyz - com[:,np.newaxis,:]
+            # calculate rg
+            q = np.einsum('jim,jin->jmn', si*mws[np.newaxis,:,np.newaxis],si)/mws.sum()
+            trace_q = np.trace(q,axis1=1,axis2=2)
+            # calculate rg
+            rg_array = np.sqrt(trace_q)
+            # calculate traceless matrix
+            mean_trace = np.trace(q,axis1=1,axis2=2)/3
+            q_hat = q - mean_trace.reshape(-1,1,1)*np.identity(3).reshape(-1,3,3)
+            # calculate asphericity
+            Delta_array = 3/2*np.trace(q_hat**2,axis1=1,axis2=2)/(trace_q**2)
+            # calculate oblateness
+            S_array = 27*np.linalg.det(q_hat)/(trace_q**3)
+            ree_vec = t_chain.xyz[:, -1, :] - t_chain.xyz[:, 0, :]
+            ree_array = np.linalg.norm(ree_vec, axis=1)
+            evals, evecs = np.linalg.eigh(q)
+            cos_array = np.abs(evecs[:, 2, 2])
+            com_z_wrapped = ((com[:, 2] + half_lz) % lz_variable) - half_lz
+            hist_com += np.histogram(com_z_wrapped,bins=edges)[0]
+            hist_rg += np.histogram(com_z_wrapped,bins=edges,weights=rg_array)[0]
+            hist_ree += np.histogram(com_z_wrapped,bins=edges,weights=ree_array)[0]
+            hist_cos += np.histogram(com_z_wrapped,bins=edges,weights=cos_array)[0]
+            np.save(output_path+f'/{sysname:s}_{chain_name:s}_{chainid:d}_com_z.npy',com_z_wrapped)
+        chain_prop[chain_name]['com'] = hist_com / traj.n_frames * conv_to_mM
+        chain_prop[chain_name]['rg']  = np.divide(hist_rg, hist_com, out=np.full_like(hist_rg, np.nan, dtype=float), where=hist_com > 0)
+        chain_prop[chain_name]['ree'] = np.divide(hist_ree, hist_com, out=np.full_like(hist_ree, np.nan, dtype=float), where=hist_com > 0)
+        chain_prop[chain_name]['cos'] = np.divide(hist_cos, hist_com, out=np.full_like(hist_cos, np.nan, dtype=float), where=hist_com > 0)
+
+    keys = ['z','com','rg','ree','cos']
+    for chain_name in chain_prop.keys():
+        np.save(output_path+f'/{sysname:s}_{chain_name:s}_com_profiles.npy',{k: chain_prop[chain_name][k] for k in keys})
+
+def cmap_chain_pairs(path,sysname,output_path,chainid_dict,input_pdb="top.pdb",cmap_cutoff=1.0):
+
+    u = mda.Universe(f"{path}/{input_pdb}", f"{path}/traj.dcd")
+    n_frames = len(u.trajectory)
+
+    for key1, key2 in combinations(chainid_dict.keys(), 2):
+        ag_1 = u.segments[chainid_dict[key1][0]:chainid_dict[key1][1] + 1].atoms
+        ag_2 = u.segments[chainid_dict[key2][0]:chainid_dict[key2][1] + 1].atoms
+
+        cmap = np.zeros((len(ag_1), len(ag_2)))
+        n_contacts_t = []
+
+        for ts in u.trajectory:
+            frame_cmap = calc_cmap(ag_1, ag_2, cmap_cutoff)
+            cmap += frame_cmap
+            n_contacts_t.append(np.sum(frame_cmap))
+
+        cmap /= n_frames
+
+        np.save(output_path+f"/{sysname}_{key1}_{key2}_cmap.npy", cmap)
+        np.save(output_path+f"/{sysname}_{key1}_{key2}_contacts.npy", np.array(n_contacts_t))
+
+def cmap_selection(path, sysname, output_path, indexrange_dict, input_pdb="top.pdb", cmap_cutoff=1.0, binary=False):
+
+    u = mda.Universe(f"{path}/{input_pdb}", f"{path}/traj.dcd")
+    n_frames = len(u.trajectory)
+
+    for key, (sel1, sel2) in indexrange_dict.items():
+        ag_1 = u.select_atoms(sel1)
+        ag_2 = u.select_atoms(sel2)
+
+        cmap = np.zeros((len(ag_1), len(ag_2)))
+        n_contacts_t = []
+
+        for ts in u.trajectory:
+            frame_cmap = calc_cmap(ag_1, ag_2, cmap_cutoff)
+            if binary:
+                frame_cmap = (frame_cmap > 0.5).astype(float)
+            cmap += frame_cmap
+            n_contacts_t.append(np.sum(frame_cmap))
+
+        cmap /= n_frames
+
+        np.save(f"{output_path}/{sysname}_{key}_cmap.npy", cmap)
+        np.save(f"{output_path}/{sysname}_{key}_contacts.npy", np.array(n_contacts_t))
+
 def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=None,end=None,step=1,input_pdb='top.pdb'):
     """
     Calculate trajectory of chain COMs and per-frame Rg's for each chain.
@@ -854,7 +1013,6 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=N
     xyz = np.empty((traj.n_frames,n_chains,3))
     for chain_name in chain_prop.keys():
         for chainid in chain_prop[chain_name]['ids']:
-            chain = traj.top.chain(chainid)
             mws = chain_prop[chain_name]['MWs']
             new_chain = cmtop.add_chain()
             res = cmtop.add_residue('COM', new_chain, resSeq=chainid)
@@ -922,11 +1080,6 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         name_2 = name_1
         chainid_dict[name_1] = np.arange(traj.top.n_chains)
 
-    print(name_1)
-    print(chainid_dict[name_1])
-    print(name_2)
-    print(chainid_dict[name_2])
-
     N_res_1 = traj.top.chain(chainid_dict[name_1][0]).n_residues
     N_res_2 = traj.top.chain(chainid_dict[name_2][0]).n_residues
 
@@ -955,23 +1108,268 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
             chainid_dict[name_2] = chainid_dict[name_1]
         cm_z = cmtraj.xyz[:,chainid_dict[name_1],2]
         # per-frame central-chain indices
-        ids_central = np.argmin(np.abs(cm_z),axis=1)
-        chainid_dict[name_1] = np.array([chainid_dict[name_1][idx] for idx in ids_central])
+        chainid_dict[name_1] = np.argmin(np.abs(cm_z),axis=1)
 
     cmap = np.zeros((N_res_1,N_res_2))
     for chain_1 in np.unique(chainid_dict[name_1]):
         surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in chainid_dict[name_2] if i != chain_1]))
         pair_indices = traj.top.select_pairs(f'chainid {chain_1:d}',surrounding_chains)
         if is_slab:
-            mask_frames = np.where(chainid_dict[name_1] == chain_1)[0]
+            mask_frames = chainid_dict[name_1] == chain_1
         else:
-            mask_frames = np.arange(traj.n_frames)#, True, dtype=bool)
-        if len(mask_frames) > 0:
-            for mf in mask_frames:
-                d = md.compute_distances(traj[mf],pair_indices)[0]
-                cm = (.5-.5*np.tanh((d-1.)/.3)).reshape(N_res_1,-1,N_res_2)
-                cm = np.sum(cm,axis=1)
-                cmap += cm
+            mask_frames = np.full(traj.n_frames, True, dtype=bool)
+        if np.any(mask_frames):
+            d = md.compute_distances(traj[mask_frames],pair_indices)
+            cmap += (.5-.5*np.tanh((d-1.)/.3)).reshape(mask_frames.sum(),
+                        N_res_1,-1,N_res_2).sum(axis=0).sum(axis=1)
     cmap /= traj.n_frames
     # save energy and contact maps
     np.save(output_path+f'/{sysname:s}_{name_1:s}_{name_2:s}_cmap.npy',cmap)
+
+def calc_bilayer_prop(path,sysname,output_path,input_pdb='top.pdb'):
+    """
+    Calculate bilayer properties.
+
+    """
+    traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
+
+    # area per lipid
+    area = traj.unitcell_lengths[:,0]*traj.unitcell_lengths[:,1]
+    mid_beads = traj.top.select('resname MID')
+    n_lipids = mid_beads.size
+    area_per_lipid = area/n_lipids*2
+    np.save(output_path+f'/{sysname:s}_apl.npy',area_per_lipid)
+
+    # order parameter
+    first_tail_bead = np.append(mid_beads+1,mid_beads+2)
+
+    dvec = md.compute_displacements(traj, np.c_[first_tail_bead,first_tail_bead+1])
+
+    cos = dvec[:,:,2] / np.linalg.norm(dvec,axis=2)
+    p2 = 0.5*(3*cos**2-1)
+    order_param = p2.mean(axis=1)
+    np.save(output_path+f'/{sysname:s}_order.npy',order_param)
+
+    # Phosphate-phosphate distance
+    u = mda.Universe(f'{path:s}/'+input_pdb)
+    lz = u.dimensions[2]
+    edges = np.arange(0,lz+1,1)
+    dz = (edges[1] - edges[0]) / 2.
+    z = edges[:-1] + dz
+
+    t_pho = traj.atom_slice(traj.top.select('resname PHO'))
+    h_pho = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_pho.xyz[:,:,2])/area.mean()
+
+    d_pho_pho = np.empty(0)
+    for h in h_pho:
+        h_i_l = h[z<z.max()/2]
+        h_i_r = h[z>z.max()/2]
+        z_l = z[np.abs(h_i_l-h_i_l.max()).argmin()]
+        z_r = z[np.abs(h_i_r-h_i_r.max()).argmin()+int(z.size/2)]
+        d_pho_pho = np.append(d_pho_pho, z_r-z_l)
+    d_pho_pho /= 10.
+    np.save(output_path+f'/{sysname:s}_dpp.npy',d_pho_pho)
+
+    df_analysis = pd.DataFrame(index=['apl','dpp','order'],columns=['value','error'])
+    block_apl = BlockAnalysis(area_per_lipid)
+    block_apl.SEM()
+    block_dpp = BlockAnalysis(d_pho_pho)
+    block_dpp.SEM()
+    block_order = BlockAnalysis(order_param)
+    block_order.SEM()
+    df_analysis.loc['apl','value'] = np.mean(area_per_lipid)
+    df_analysis.loc['apl','error'] = block_apl.sem
+    df_analysis.loc['dpp','value'] = np.mean(d_pho_pho)
+    df_analysis.loc['dpp','error'] = block_dpp.sem
+    df_analysis.loc['order','value'] = np.mean(order_param)
+    df_analysis.loc['order','error'] = block_order.sem
+    df_analysis.to_csv(output_path+f'/{sysname:s}_bilayer_prop.csv')
+
+def calc_membrane_profiles(
+    path,
+    sysname,
+    output_path,
+    residues_file,
+    tmd_sel,
+    start=0,
+    ref_sel="resname TDO or resname TPO",
+    strip_sel="not (resname CHO or resname PHO or resname MID or resname TDO or resname TPO)",
+):
+    df_residues = pd.read_csv(residues_file, index_col=0)
+    three_to_one = dict(zip(df_residues["three"].values, df_residues.index.values))
+    u = mda.Universe(f"{path}/top.pdb", f"{path}/{sysname}.dcd")
+
+    ref = u.select_atoms(ref_sel)
+    prot = u.select_atoms(strip_sel)
+    tmd = u.select_atoms(tmd_sel)
+    all_ag = u.atoms
+
+    seq = [three_to_one[res.resname] if len(res.resname)==3 else res.resname for res in u.residues]
+    masses = get_masses(seq, df_residues, charge_termini=True)
+    u.add_TopologyAttr("masses", masses)
+
+    bonds = []
+    for seg in u.segments:
+        idx = seg.atoms.indices
+        bonds += [(int(i), int(j)) for i, j in zip(idx[:-1], idx[1:])]
+    u.add_TopologyAttr("bonds", bonds)
+
+    def calc_zpatch(z,h):
+        cutoff = 0
+        ct = 0.
+        ct_max = 0.
+        zwindow = []
+        hwindow = []
+        zpatch = []
+        hpatch = []
+        for ix, x in enumerate(h):
+            if x > cutoff:
+                ct += x
+                zwindow.append(z[ix])
+                hwindow.append(x)
+            else:
+                if ct > ct_max:
+                    ct_max = ct
+                    zpatch = zwindow
+                    hpatch = hwindow
+                ct = 0.
+                zwindow = []
+                hwindow = []
+        zpatch = np.array(zpatch)
+        hpatch = np.array(hpatch)
+        return zpatch, hpatch
+
+    def center_membrane_and_tmd(ts):
+        Lx, Ly, Lz = ts.dimensions[:3]
+
+        edges = np.arange(0.0, Lz + 1.0, 1.0)
+        z = edges[:-1] + 0.5
+        h, _ = np.histogram(ref.positions[:, 2] % Lz, bins=edges)
+        zpatch, hpatch = calc_zpatch(z, h)
+        zmid = np.average(zpatch, weights=hpatch)
+
+        all_ag.translate(np.array([0.0, 0.0, -zmid + 0.5 * Lz]))
+        transformations.wrap(all_ag, compound="segments")(ts)
+
+        com = tmd.center_of_mass()
+        # protein translated close to the edge of the leaflet
+        all_ag.translate([-com[0]+Lx/2, -com[1]+0.2*Lx, 0.0])
+
+        transformations.wrap(all_ag, compound="segments")(ts)
+        return ts
+
+    u.trajectory.add_transformations(transformations.unwrap(prot), center_membrane_and_tmd)
+
+    centered_all = f"{path}/traj.dcd"
+    with mda.Writer(centered_all, all_ag.n_atoms) as W:
+        for ts in u.trajectory[start:]:
+            W.write(all_ag)
+
+    u_prot = mda.Universe(f"{path}/top.pdb", centered_all)
+    prot_ag = u_prot.select_atoms(strip_sel)
+    res_by_seg = [list(s.residues) for s in prot_ag.segments]
+    seg_lens = [len(rs) for rs in res_by_seg]
+    seg_idx = np.repeat(np.arange(len(seg_lens)), seg_lens)
+    residues = [r for rs in res_by_seg for r in rs]
+
+    cg_coords = []
+    cg_dims = []
+    for ts in u_prot.trajectory:
+        cg_coords.append(np.array([r.atoms.positions.mean(axis=0) for r in residues], dtype=np.float32))
+        cg_dims.append(ts.dimensions.copy())
+
+    cg = mda.Universe.empty(
+        n_atoms=len(residues),
+        n_residues=len(residues),
+        atom_resindex=np.arange(len(residues)),
+        residue_segindex=seg_idx.astype(int),
+        trajectory=True,
+    )
+
+    cg.add_TopologyAttr("name", ["CA"] * len(residues))
+    cg.add_TopologyAttr("resname", [r.resname for r in residues])
+    cg.add_TopologyAttr("resid", [r.resid for r in residues])
+
+    cg.load_new(np.asarray(cg_coords), order="fac")
+
+    for ts_cg, dims in zip(cg.trajectory, cg_dims):
+        ts_cg.dimensions = dims
+
+    bonds = []
+    for seg in cg.segments:
+        idx = seg.atoms.indices
+        bonds += [(int(i), int(j)) for i, j in zip(idx[:-1], idx[1:])]
+    cg.add_TopologyAttr("bonds", bonds)
+
+    cg.atoms.write(f"{path}/prot_CG.pdb")
+    with mda.Writer(f"{path}/prot_CG.dcd", cg.atoms.n_atoms) as W:
+        for ts in cg.trajectory:
+            W.write(cg.atoms)
+
+def calc_domain_angles(path, sysname, output_path, angle_sels, residues_file, saving_interval=1.0):
+    def _domain_angle_to_z(pos, masses):
+        x = pos - np.average(pos, axis=0, weights=masses)
+        S = (x * masses[:, None]).T @ x
+        I = np.trace(S) * np.eye(3) - S
+        w, v = np.linalg.eigh(I)
+        v = v[:, np.argsort(w)]    
+        angles = []
+        for k in range(3):
+            axis = v[:, k]
+            axis /= np.linalg.norm(axis)
+            cosang = np.clip(np.abs(axis[2]), 0.0, 1.0)
+            angles.append(np.degrees(np.arccos(cosang)))
+
+        return np.append(angles, w[np.argsort(w)])
+
+    u = mda.Universe(f"{path}/prot_CG.pdb", f"{path}/prot_CG.dcd", in_memory=True)
+    prot = u.atoms
+    angle_domains = {name: u.select_atoms(sel) for name, sel in angle_sels.items()}
+
+    df_residues = pd.read_csv(residues_file, index_col=0)
+    three_to_one = dict(zip(df_residues["three"].values, df_residues.index.values))
+    seq = [three_to_one[res.resname] if len(res.resname)==3 else res.resname for res in u.residues]
+    masses = get_masses(seq, df_residues, charge_termini=True)
+
+    mean = np.zeros(prot.n_atoms)
+    M2 = np.zeros(prot.n_atoms)
+    angles = {name: [] for name in angle_domains}
+    times = []
+    n = 0
+
+    for ts in u.trajectory:
+        Lz = ts.dimensions[2]
+        dz = np.abs(prot.positions[:, 2] - 0.5*Lz) / 10.0
+
+        n += 1
+        delta = dz - mean
+        mean += delta / n
+        M2 += delta * (dz - mean)
+
+        for name, ag in angle_domains.items():
+            angles[name].append(_domain_angle_to_z(ag.positions, masses[ag.indices]))
+
+        times.append((n-1) * saving_interval)
+
+    std = np.sqrt(M2/(n-1))
+    dist_out = np.c_[np.arange(prot.n_atoms)+1, mean, std]
+
+    np.save(output_path + f"/{sysname}_distance_midplane.npy", dist_out)
+
+    angle_out = {"time": np.array(times)}
+    for name, vals in angles.items():
+        angle_out[name] = np.array(vals)
+
+    np.save(output_path + f"/{sysname}_domain_angles.npy", angle_out)
+
+def calc_domain_rgs(path, sysname, output_path, residues_file, rg_sels, saving_interval=1.0):
+    residues = pd.read_csv(residues_file).set_index('three')
+    u = mda.Universe(f"{path}/prot_CG.pdb", f"{path}/prot_CG.dcd", in_memory=True)
+
+    rg_out = {"time": np.arange(len(u.trajectory)) * saving_interval}
+
+    for name, sel in rg_sels.items():
+        ag = u.select_atoms(sel)
+        rg_out[name] = calc_rg(u, ag, ag.resnames.tolist(), residues)
+
+    np.save(output_path + f"/{sysname}_domain_rgs.npy", rg_out)

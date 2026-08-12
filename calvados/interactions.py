@@ -29,7 +29,7 @@ def init_ah_interactions(eps,rc,fixed_lambda):
     # intermolecular interactions
     energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
     #ah = openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/{rc})^12-(0.5*(s1+s2)/{rc})^6')
-    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
+    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select((id1+id2)*step(id1+id2),0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
 
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
@@ -37,7 +37,7 @@ def init_ah_interactions(eps,rc,fixed_lambda):
 
     ah.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
     ah.setCutoffDistance(rc*unit.nanometer)
-    ah.setForceGroup(0)
+    #ah.setForceGroup(0)
 
     print('Ashbaugh-Hatch potential between particles with lambda=1 and sigma=0.68 at',rc*unit.nanometer,end=': ')
     print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*unit.kilojoules_per_mole)
@@ -55,30 +55,14 @@ def init_yu_interactions(eps, k, rc):
 
     yu.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
     yu.setCutoffDistance(rc*unit.nanometer)
-    yu.setForceGroup(1)
+    #yu.setForceGroup(1)
 
     return yu
-
-def init_nonbonded_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
-    """ Define protein interaction expressions (without restraints). """
-
-    ah = init_ah_interactions(eps_lj, cutoff_lj, fixed_lambda)
-    yu = init_yu_interactions(eps_yu, k_yu, cutoff_yu)
-
-    return ah, yu
 
 def init_angles():
     ha = openmm.HarmonicAngleForce()
     ha.setUsesPeriodicBoundaryConditions(True)
     return ha
-
-def init_lipid_interactions(eps_lj, eps_yu, cutoff_yu, factor=1.9):
-    """ Define lipid interaction expressions. """
-
-    # harmonic angles
-    cos = init_cosine_interactions(factor*eps_lj)
-    cn = init_charge_nonpolar_interactions(eps_yu, cutoff_yu)
-    return cos, cn
 
 def init_wcafene(eps_lj):
     wcafene = init_wcafene_interactions(3*eps_lj)
@@ -91,7 +75,7 @@ def init_restraints(restraint_type):
         cs = openmm.HarmonicBondForce()
     if restraint_type == 'go':
         go_expr = 'k*(5*(s/r)^12-6*(s/r)^10)'
-        cs = openmm.CustomBondForce(go_expr+'; s=s; k=k')#; shift=(0.5*(s)/rc)^12-(0.5*(s)/rc)^6')
+        cs = openmm.CustomBondForce(go_expr)#; shift=(0.5*(s)/rc)^12-(0.5*(s)/rc)^6')
         cs.addPerBondParameter('s')
         cs.addPerBondParameter('k')
     cs.setUsesPeriodicBoundaryConditions(True)
@@ -166,11 +150,6 @@ def add_scaled_yu(scYU, i, j, offset, comp):
     scaled_pair = [i+offset+1, j+offset+1, comp.bondscale[i,j]] # 1-based
     return scYU, scaled_pair
 
-def add_exclusion(force, i: int, j: int):
-    """ Add exclusions to a list of openMM forces """
-    force.addExclusion(i,j)
-    return force
-
 def init_wcafene_interactions(eps):
     """ Define FENE interaction. """
 
@@ -194,6 +173,17 @@ def init_cosine_interactions(eps):
     cosine.setCutoffDistance((2**(1/6)+1.5)*unit.nanometer)
     cosine.setForceGroup(2)
     return cosine
+
+def init_isolf_interactions(eps,rc):
+    """ Define interactions between lipids (iSoLF lipid model, DOI: https://doi.org/10.1063/5.0160417). """
+    isolf_expression = f'{eps}*select(step(r-rmin),l*select(step(o1)*step(o2),step(rmin+o-r)*(3*u^2-2*u^3-1),is_lj*4*uLJ),4*(uLJ+1/4)-select(step(o1)*step(o2),l,is_lj*l))'
+    isolf = openmm.CustomNonbondedForce(isolf_expression+'; is_lj=step(-3-o1-o2); l=sqrt(l1*l2); u=(r-rmin)/o; uLJ=(s/r)^12-(s/r)^6; rmin=2^(1/6)*s; s=0.5*(s1+s2); o=0.5*(o1+o2)')
+    isolf.addPerParticleParameter('s')
+    isolf.addPerParticleParameter('l')
+    isolf.addPerParticleParameter('o')
+    isolf.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
+    isolf.setCutoffDistance(rc*unit.nanometer)
+    return isolf
 
 def init_charge_nonpolar_interactions(eps,rc):
     """ Define charge-nonpolar interaction (lipid model, DOI: https://doi.org/10.1063/1.5058234 and DOI: https://doi.org/10.1073/pnas.2311700120). """

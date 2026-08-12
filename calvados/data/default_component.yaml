@@ -5,6 +5,10 @@ charge_termini : 'both'
 alpha: 0
 ffasta : 'fastabib.fasta'
 kb : 8033.0
+fcharges : null
+ref_bead : 0
+pos_bead : [0,0,0]
+fixed_bead : false
 
 ext_restraint : true
 restraint : false
@@ -16,6 +20,8 @@ fdomains : 'domains.yaml'
 k_go : 15.
 use_com : true
 periodic: false
+subvolume: null
+random: true
 
 colabfold : 0
 bfac_shift : 0.8

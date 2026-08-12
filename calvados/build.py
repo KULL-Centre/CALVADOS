@@ -49,7 +49,7 @@ def check_walls(x,box):
         return True # clash with right box wall
     return False # molecule in box
 
-def check_clash(x,pos,box,cutoff=0.7):
+def check_clash(x,pos,box,cutoff=0.3):
     """ Check for clashes with other particles.
     Returns true if clash, false if no clash. """
     boxfull = np.append(box,[90,90,90])
@@ -151,14 +151,17 @@ def build_compact(nbeads, d=0.38, verbose=False):
     xs = (np.array(xs) - 0.5*N) * d
     return xs
 
-def random_placement(box,xs_others,xinit,ntries=10000):
+def random_placement(box,xs_others,xinit,ntries=10000,random=True):
     ntry = 0
     while True: # random placement
         ntry += 1
         if ntry > ntries:
             raise ValueError(f"Tried {ntries}x to add molecule. Giving up.")
-        x0 = draw_starting_vec(box) # random point in box
-        xs = x0 + xinit
+        if random:
+            x0 = draw_starting_vec(box) # random point in box
+            xs = x0 + xinit
+        else:
+            xs = xinit
         walls = check_walls(xs,box) # check if outside box
         if walls:
             continue
@@ -192,48 +195,38 @@ def build_xybilayer(x0,box,xs_others,xinit,upward=True):
             inserted = False
     return xs, inserted
 
-def build_xygrid(N,box,z=0.):
+def build_xygrid(N, box, z=0.0):
     """ Grid for xy slabs """
-    if np.sqrt(N) % 1 > 0:
-        b = 2
-    else:
-        b = 1
-    nx = int(np.sqrt(N)) + b # nx spots in x dim
-    ny = int(np.sqrt(N)) + b # ny spots in x dim
-
+    nx = int(np.ceil(np.sqrt(N)))
+    ny = int(np.ceil(N / nx))
     dx = box[0] / nx
     dy = box[1] / ny
 
+    x0, y0 = dx/2, dy/2
     xy = []
-    x, y = 0., 0.
-    ct = 0
-    for n in range(N):
-        ct += 1
-        xy.append([x,y,z])
-        if ct == ny:
-            y = 0
-            x += dx
-            ct = 0
-        else:
-            y += dy
-    xy = np.array(xy)
-    return xy
+
+    for i in range(nx):
+        for j in range(ny):
+            if len(xy) < N:
+                xy.append([x0 + i*dx, y0 + j*dy, z])
+
+    return np.array(xy)
 
 def build_xyzgrid(N,box):
     """ 3D grid """
 
     r = box / np.sum(box)
-    a = np.cbrt(N / np.product(r))
+    a = np.cbrt(N / np.prod(r))
     n = a * r
     nxyz = np.floor(n)
-    while np.product(nxyz) < N:
+    while np.prod(nxyz) < N:
         ndeviation = n / nxyz
         devmax = np.argmax(ndeviation)
         nxyz[devmax] += 1
-    while np.product(nxyz) > N:
+    while np.prod(nxyz) > N:
         nmax = np.argmax(nxyz)
         nxyz[nmax] -= 1
-        if np.product(nxyz) < N:
+        if np.prod(nxyz) < N:
             nxyz[nmax] += 1
             break
 
@@ -300,7 +293,7 @@ def geometry_from_pdb(pdb,use_com=False):
         simplefilter("ignore")
         u = Universe(pdb)
     ag = u.atoms
-    ag.translate(-ag.center_of_mass())
+    #ag.translate(-ag.center_of_mass())
     if use_com:
         coms = []
         for res in u.residues:
@@ -311,48 +304,9 @@ def geometry_from_pdb(pdb,use_com=False):
         cas = u.select_atoms('name CA')
         pos = cas.positions / 10.
     if u.dimensions is None:
-        box = None
+        box = np.array([0,0,0,90,90,90])
     else:
         box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
-    return pos, box
-
-def geometry_from_pdb_rna(pdb,use_com=False):
-    """ positions in nm"""
-    backbone_atoms_name = [ "1H2'", "1H5'", "2H5'", "2HO'", "C1'",
-                            "C2'",   "C3'",  "C4'",  "C5'", "H1'",
-                            "H3'",   "H4'",  "O2'",  "O3'", "O5'",
-                            "O4'",   "OP1",  "OP2",  "P"  ]
-
-    with catch_warnings():
-        simplefilter("ignore")
-        u = Universe(pdb)
-    ag = u.atoms
-    ag.translate(-ag.center_of_mass())
-    if use_com:
-        pos = []
-        for res in u.residues:
-            backbone = res.atoms.select_atoms('name ' + ' '.join(backbone_atoms_name))
-            non_backbone = res.atoms.difference(backbone)
-            pos.append(backbone.center_of_mass())
-            pos.append(non_backbone.center_of_mass())
-        pos = np.array(pos) / 10.
-
-    else:
-        pos =  []
-        for res in u.residues:
-            ps = res.atoms.select_atoms('name P')
-            pos.append(ps.positions[0] / 10.)
-            if res.resname in ['U','C']:
-                ns = res.atoms.select_atoms('name N1')
-                pos.append(ns.positions[0] / 10.)
-            elif res.resname in ['A','G']:
-                ns = res.atoms.select_atoms('name N9')
-                pos.append(ns.positions[0] / 10.)
-            else:
-                raise ValueError(f"Invalid RNA resname, {res.resname}")
-        pos = np.array(pos)
-
-    box = np.append(u.dimensions[:3]/10.,u.dimensions[3:])
     return pos, box
 
 def bfac_from_pdb(pdb,confidence=70.):

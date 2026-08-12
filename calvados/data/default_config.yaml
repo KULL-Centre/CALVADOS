@@ -22,10 +22,15 @@ pressure_coupling : false
 box_eq : false
 pressure : [0,0,0]
 boxscaling_xyz : [true,true,true]
+pressure_ramp : false
+pressure_max : 1
 k_eq : 0.02
 steps_eq : 1000
 ext_force : false
 ext_force_expr : 'step(d2-18)*d2; d2=periodicdistance(x, y, z, 0, 0, z)^2'
+
+pressure_tensor : false
+pressurefreq : 1
 
 friction_coeff: 0.01 
 slab_width : 100
@@ -34,6 +39,7 @@ random_number_seed : null
 report_potential_energy : false
 logfreq : 1000000
 gpu_id: 0
+gpu_precision: 'mixed'
 
 custom_restraints : false
 custom_restraint_type : 'harmonic'
