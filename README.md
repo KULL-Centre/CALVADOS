@@ -37,6 +37,7 @@ conda install -c conda-forge openmm=8.2.0 cudatoolkit=11.8 mdanalysis=2.9 mdtraj
 ``` 
 git clone https://github.com/KULL-Centre/CALVADOS.git
 cd CALVADOS
+git checkout mem-calvados
 pip install .
 (or pip install -e .)
 ```
