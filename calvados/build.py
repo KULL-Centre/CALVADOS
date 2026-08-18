@@ -346,7 +346,7 @@ def geometry_from_pdb_rna(pdb,use_com=False):
         for res in u.residues:
             ps = res.atoms.select_atoms('name P')
             pos.append(ps.positions[0] / 10.)
-            if res.resname in ['U','C']:
+            if res.resname in ['U','C','T']:
                 ns = res.atoms.select_atoms('name N1')
                 pos.append(ns.positions[0] / 10.)
             elif res.resname in ['A','G']:
