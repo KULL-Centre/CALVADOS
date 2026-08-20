@@ -1,4 +1,3 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6914053.svg)](https://doi.org/10.5281/zenodo.6914053)
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KULL-Centre/_2023_Tesei_IDRome/blob/main/IDRLab.ipynb)
 [![CALVADOS Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/r-eFzoBiQZ4)
 [![IDRome Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/kL3-cusHgzM)
