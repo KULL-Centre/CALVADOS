@@ -32,6 +32,15 @@ dependencies = [
     "numba",
     "scipy",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7,<9",
+    "pytest-cov>=4,<8",
+    "mypy>=1.10,<2",
+    "ruff>=0.4,<1",
+]
+
 classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: POSIX :: Linux",
