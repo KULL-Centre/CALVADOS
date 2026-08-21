@@ -1,7 +1,7 @@
 The lines below run direct coexistence simulations of 100 copies of a single IDR:
 
 ```bash
-python prepare.py --name <protein name>  --replica <replica>
+python prepare.py --name <protein name>  --replica <replica> --gpu_id <gpu_id>
 python <protein name>_<replica>/run.py --path <protein name>_<replica>
 ```
 

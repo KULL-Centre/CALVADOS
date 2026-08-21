@@ -1,4 +1,3 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6914053.svg)](https://doi.org/10.5281/zenodo.6914053)
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KULL-Centre/_2023_Tesei_IDRome/blob/main/IDRLab.ipynb)
 [![CALVADOS Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/r-eFzoBiQZ4)
 [![IDRome Video](http://img.shields.io/badge/►-Video-FF0000.svg)](https://youtu.be/kL3-cusHgzM)
@@ -26,14 +25,18 @@ The examples described in the paper can be found in the `examples` folder.
 
 ## Installation Instructions
 
-1. Make new conda environment for calvados
+1. Create a new conda environment for calvados
 ``` 
-conda create -n calvados python=3.10
+conda create -n calvados python=3.13
 conda activate calvados
 ```
-(2. Only needed when planning to use GPUs: Install openmm via conda-force with cudatoolkit. This step can be skipped if running on CPU only.)
+2. Install openmm via conda-force with cudatoolkit, if you are planning to run on GPUs with CUDA
 ```
-conda install -c conda-forge openmm=8.2.0 cudatoolkit=11.8
+conda install -c conda-forge openmm=8.2.0 cudatoolkit=11.8 mdanalysis=2.9 mdtraj=1.11
+```
+or without cudatoolkit if you are running on CPU or OpenCL
+```
+conda install -c conda-forge openmm=8.2.0 mdanalysis=2.9 mdtraj=1.11
 ```
 3. Clone package and install CALVADOS and its dependencies using pip
 ``` 

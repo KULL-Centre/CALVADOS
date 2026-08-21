@@ -28,9 +28,7 @@ from main import BlockAnalysis
 
 def center_traj(pdb,traj,start=None,stop=None,step=1):
     """ Center trajectory """
-  
     u = mda.Universe(pdb,traj)
-    
     with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
         for ts in u.trajectory[start:stop:step]:
             u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
@@ -973,5 +971,6 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
                 cm = np.sum(cm,axis=1)
                 cmap += cm
     cmap /= traj.n_frames
+
     # save energy and contact maps
     np.save(output_path+f'/{sysname:s}_{name_1:s}_{name_2:s}_cmap.npy',cmap)

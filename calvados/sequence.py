@@ -26,6 +26,8 @@ from scipy.integrate import quad
 
 from calvados import analysis, interactions
 
+from openmm import app
+
 ### SEQUENCE INPUT / OUTPUT
 def read_fasta(ffasta):
     records = SeqIO.to_dict(SeqIO.parse(ffasta, "fasta"))
@@ -36,7 +38,11 @@ def seq_from_pdb(pdb,selection='all',fmt='string'):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        u = Universe(pdb)
+        if pdb.lower().endswith('.cif'):
+            pdbx = app.pdbxfile.PDBxFile(pdb)
+            u = Universe(pdbx)
+        else:
+            u = Universe(pdb)
 
     # we do not assume residues in the PDB file are numbered from 1
     n_termini = [0]
