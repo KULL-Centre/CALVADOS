@@ -39,7 +39,7 @@ setup(
         'numba',
         'scipy'
     ],
-    python_requires=">=3.13,<3.14",
+    python_requires=">=3.11,<3.14",
 
     # include_package_data=True,
     package_data={'' : ['data/*.csv', 'data/*.yaml', 'data/templates/*']},
