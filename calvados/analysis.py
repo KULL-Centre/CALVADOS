@@ -16,8 +16,13 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.stats import sem
 
 from calvados.build import get_ssdomains
+from calvados.sequence import seq_from_pdb
 
 import matplotlib.pyplot as plt
+
+import math
+
+from Bio import SeqUtils
 
 import os
 import sys
@@ -515,29 +520,19 @@ class SlabAnalysis:
         Calculate concentration profiles for reference chains (and possible clients).
         Keep start=None, end=None, step=1 if the centered trajectory is already cropped. """
 
-        u = mda.Universe(f'{self.input_path}/{self.input_pdb}', f'{self.input_path}/{self.centered_dcd}', in_memory=True)
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
 
-        if self.ref_chains is None:
-            self.ref_chains = (0, len(u.segments)-1)
-            # ag_ref = u.atoms
-            # nbeads_ref = len(u.segments[0].atoms)
-        # else:
-        sg_ref = u.segments[self.ref_chains[0]:self.ref_chains[1]+1]
-        ag_ref = sg_ref.atoms
-        nbeads_ref = len(sg_ref[0].atoms)
-        if self.verbose:
-            print(f'Reference: name {self.ref_name}; chains {self.ref_chains[0]}-{self.ref_chains[1]}; nbeads: {nbeads_ref}')
-
-        n_frames = len(u.trajectory[start:end:step])
+        n_frames = len(self.u.trajectory[start:end:step])
         binwidth = 1 # 0.1 nm
-        volume = u.dimensions[0]*u.dimensions[1]*binwidth/1e3 # volume of a slice in nm3
-        conv_ref = 10/6.02214/nbeads_ref/volume*1e3 # conversion to mM
+        volume = self.u.dimensions[0]*self.u.dimensions[1]*binwidth/1e3 # volume of a slice in nm3
+        conv_ref = 10/6.02214/self.nbeads_ref/volume*1e3 # conversion to mM
 
         # Reference profile
         h_ref = np.zeros((n_frames,self.n_bins))
-        for t,ts in enumerate(u.trajectory[start:end:step]):
-            ts = transformations.wrap(ag_ref)(ts)
-            zpos = ag_ref.positions.T[2]
+        for t,ts in enumerate(self.u.trajectory[start:end:step]):
+            ts = transformations.wrap(self.ag_ref)(ts)
+            zpos = self.ag_ref.positions.T[2]
             h, e = np.histogram(zpos,bins=self.edges)
             h_ref[t] = h * conv_ref # mM
         if save_individual_profiles:
@@ -548,7 +543,7 @@ class SlabAnalysis:
 
         # Client profiles
         for i, (first,last) in enumerate(self.client_chain_list):
-            sg_sel = u.segments[first:last+1]
+            sg_sel = self.u.segments[first:last+1]
             ag_sel = sg_sel.atoms
             nbeads_sel = len(sg_sel[0].atoms)
             if self.verbose:
@@ -557,7 +552,7 @@ class SlabAnalysis:
             conv_sel = 10/6.02214/nbeads_sel/volume*1e3 # conversion to mM
 
             h_sel = np.zeros((n_frames,self.n_bins))
-            for t,ts in enumerate(u.trajectory[start:end:step]):
+            for t,ts in enumerate(self.u.trajectory[start:end:step]):
                 # wrap for density profile calculation
                 ts = transformations.wrap(ag_sel)(ts)
                 zpos = ag_sel.positions.T[2]
@@ -577,7 +572,7 @@ class SlabAnalysis:
     def calc_concentrations(self,
             pden=2., pdil=8., dGmin=-10.,
             write_conc_arrays=True,
-            input_pdb='top.pdb',
+            # input_pdb='top.pdb',
             plot_profiles=True):
 
         self.pden, self.pdil = pden, pdil
@@ -587,7 +582,7 @@ class SlabAnalysis:
 
         # Reference concentrations
         if self.ref_chains is None:
-            u = mda.Universe(f'{self.input_path}/'+input_pdb)
+            u = mda.Universe(f'{self.input_path}/'+self.input_pdb)
             self.ref_chains = (0, len(u.segments)-1)
 
         h = np.load(f'{self.output_path}/{self.name}_{self.ref_name}_profile.npy')
@@ -651,6 +646,98 @@ class SlabAnalysis:
         results['dG'], results['dG_err'] = dG, dG_error # kT
         return results
 
+    def load_traj(self, centered=False, step=1):
+        if centered:
+            dcd = self.centered_dcd
+            traj_str = 'centered'
+        else:
+            dcd = self.input_dcd
+            traj_str = 'original'
+        self.u = mda.Universe(f'{self.input_path}/{self.input_pdb}', f'{self.input_path}/{dcd}', in_memory=True)
+        if self.verbose:
+            print(f'Loaded {traj_str} trajectory {self.input_path}/{dcd}')
+            print(f'nframes: {len(self.u.trajectory[::step])}')
+
+    def load_ref(self):
+        if self.ref_chains is None:
+            self.ref_chains = (0, len(self.u.segments)-1)
+        self.sg_ref = self.u.segments[self.ref_chains[0]:self.ref_chains[1]+1]
+        self.ag_ref_per_chain = [seg.atoms for seg in self.sg_ref] # all beads per chain
+        self.ag_ref = self.sg_ref.atoms
+        self.nbeads_ref = len(self.sg_ref[0].atoms)
+        if self.verbose:
+            print(f'Reference: name {self.ref_name}; chains {self.ref_chains[0]}-{self.ref_chains[1]}; nbeads: {self.nbeads_ref}')
+
+    @staticmethod
+    @nb.jit(nopython=True)
+    def distribute_monomers(prop, prop_binned, bin_counts, bead_positions, L):
+        for bpos in bead_positions:
+            while (bpos >= L) or (bpos < 0.):
+                bpos -= (bpos // L) * L
+            bin_idx = int(bpos)
+            prop_binned[bin_idx] += prop
+            bin_counts[bin_idx] += 1
+        return prop_binned, bin_counts
+
+    def calc_orientations(self, step=1):
+        """ 
+        Calculate orientational order parameter S along z,
+        distributed to bins corresponding to monomers of each chain.
+        Currently only for reference!
+        """
+        
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        z = np.array([0.,0.,1.])
+
+        bin_counts = np.zeros((int(self.lz)))
+        sz_binnned = np.zeros((int(self.lz)))
+
+        for idx, seg in tqdm(enumerate(self.ag_ref_per_chain),total=len(self.ag_ref_per_chain)):
+            for t, ts in enumerate(self.u.trajectory[::step]):
+                a = seg.principal_axes()[2]
+                cos = self.calc_cos(a,z)
+                sz = 3./2.*cos**2 - 1./2.
+                bead_positions = seg.positions[:,2]
+                sz_binnned, bin_counts = self.distribute_monomers(sz, sz_binnned, bin_counts, bead_positions, self.lz)
+        
+        sz_m = np.zeros((int(self.lz)))
+        for bin_idx, sz in enumerate(sz_binnned):
+            if bin_counts[bin_idx] == 0:
+                sz_m[bin_idx] = 0.
+            else:
+                sz_m[bin_idx] = sz / bin_counts[bin_idx]
+        
+        np.save(f'{self.output_path}/{self.name}_sz.npy',sz_m)
+
+    def calc_rgs(self, step=1):
+        """
+        Calculate Rg along z,
+        distributed to bins corresponding to monomers of each chain.
+        """
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        bin_counts = np.zeros((int(self.lz)))
+        rg2_binned = np.zeros((int(self.lz)))
+
+        for idx, seg in tqdm(enumerate(self.ag_ref_per_chain),total=len(self.ag_ref_per_chain)):
+            for t,ts in enumerate(self.u.trajectory[::step]):
+                rg2 = (seg.radius_of_gyration() / 10.)**2 # nm
+                bead_positions = seg.positions[:,2]
+                rg2_binned, bin_counts = self.distribute_monomers(rg2, rg2_binned, bin_counts, bead_positions, self.lz)
+
+        rg_m = np.zeros((int(self.lz)))
+
+        for bin_idx, rg2 in enumerate(rg2_binned):
+            if bin_counts[bin_idx] == 0:
+                rg_m[bin_idx] = np.nan
+            else:
+                rg_m[bin_idx] = np.sqrt(rg2 / bin_counts[bin_idx])
+        np.save(f'{self.output_path}/{self.name}_rg.npy',rg_m)
+
     def plot_density_profiles(self):
         fig, ax = plt.subplots(figsize=(8,4))
 
@@ -675,6 +762,140 @@ class SlabAnalysis:
 
         fig.tight_layout()
         fig.savefig(f'{self.output_path}/{self.name}_profiles.pdf')
+
+    def calc_com_traj(self,residues_file,
+        start=None,end=None,step=1,
+        index_col='three'):
+        """
+        Calculate trajectory of chain COMs and per-frame Rg's for each chain.
+        """
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        print(self.ref_chains)
+
+        residues = pd.read_csv(residues_file, index_col=index_col)
+
+        traj = md.load_dcd(f'{self.input_path}/traj.dcd',top=f'{self.input_path}/{self.input_pdb}')
+
+        chain_prop = {}
+        chain_name = self.ref_name
+        n_chains = 0
+        chainids = self.ref_chains
+
+        chain_prop[chain_name] = {}
+        # if type(chainids) is int:
+        #     chainids = (chainids, chainids)
+        seq = [res.name for res in traj.top.chain(chainids[0]).residues]
+        if len(seq[0]) == 1:
+            seq = [SeqUtils.seq3(res).upper() for res in seq]
+        mws = residues.loc[seq,'MW'].values
+        mws[0] += 2
+        mws[-1] += 16
+        print(mws)
+        chain_prop[chain_name]['ids'] = np.arange(chainids[0],chainids[1]+1)
+        n_chains += chain_prop[chain_name]['ids'].size
+        chain_prop[chain_name]['N'] = len(seq)
+        chain_prop[chain_name]['MWs'] = mws
+        chain_prop[chain_name]['rgs'] = []
+
+        # calculate traj of chain COM
+        cmtop = md.Topology()
+        xyz = np.empty((traj.n_frames,n_chains,3))
+        for chain_name in chain_prop.keys():
+            print(chain_name)
+            for chainid in chain_prop[chain_name]['ids']:
+                print(chainid)
+                chain = traj.top.chain(chainid)
+                mws = chain_prop[chain_name]['MWs']
+                new_chain = cmtop.add_chain()
+                res = cmtop.add_residue('COM', new_chain, resSeq=chainid)
+                cmtop.add_atom(chain_name, element=traj.top.atom(0).element, residue=res)
+                t_chain = traj.atom_slice(traj.top.select(f'chainid {chainid:d}'))
+                com = np.sum(t_chain.xyz*mws[np.newaxis,:,np.newaxis],axis=1)/mws.sum()
+                xyz[:,new_chain.index,:] = com
+        cmtraj = md.Trajectory(xyz, cmtop, traj.time, traj.unitcell_lengths, traj.unitcell_angles)
+
+        # calculate radial distribution function
+        cmtraj[0].save_pdb(f'{self.output_path}/{self.name}_com_top.pdb')
+        cmtraj.save_dcd(f'{self.output_path}/{self.name}_com_traj.dcd')
+
+    def calc_aa_bins(self,step=1):
+        """ Calculate bins of amino acid positions. """
+
+        aminoacids = "ACDEFGHIKLMNPQRSTVWY"
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        self.bins = np.zeros((int(self.lz), 20))
+
+        if len(self.ag_ref_per_chain[0].names[0]) > 1: # three letter res
+            bead_names = [str(SeqUtils.seq1(s)) for s in self.ag_ref_per_chain[0].names]
+        else:
+            bead_names = [str(s) for s in self.ag_ref_per_chain[0].names]
+
+        aa_indices = tuple(int(aminoacids.index(aa)) for aa in bead_names)
+        # print(aa_indices)
+
+        for t, ts in tqdm(enumerate(self.u.trajectory[::step]), total=len(self.u.trajectory[::step])): 
+            for seg in self.ag_ref_per_chain:
+                bead_positions = seg.positions[:,2]
+                self.bins = self.aa_into_bins(self.bins, bead_positions, aa_indices, self.lz)
+        np.save(f'{self.output_path}/{self.name}_aa_bins.npy', self.bins)
+
+    @staticmethod
+    @nb.jit(nopython=True)
+    def aa_into_bins(bins, bead_positions, aa_indices, L):
+        for resid, bpos in enumerate(bead_positions):
+        # for bpos, aa_idx in zip(bead_positions, aa_indices):
+            aa_idx = aa_indices[resid]
+            # bpos = self.wrap_bead(bpos, L)
+            while (bpos >=  L) or (bpos < 0.):
+                bpos -= (bpos // L) *  L
+            bin_idx = int(bpos)
+            # aa_idx = int(aminoacids.index(aa))
+            bins[bin_idx, aa_idx] += 1
+        return bins
+
+    def calc_resid_bins(self,step=1):
+        """ Calculate bins of amino acid positions. """
+
+        self.load_traj(centered=True, step=step)
+        self.load_ref()
+
+        nbeads = len(self.sg_ref[0].atoms) # nresidues
+        self.bins = np.zeros((int(self.lz), nbeads))
+
+        for t, ts in tqdm(enumerate(self.u.trajectory[::step]), total=len(self.u.trajectory[::step])):
+            for seg in self.ag_ref_per_chain:
+                bead_positions = seg.positions[:,2]
+                self.bins = self.resid_into_bins(self.bins, bead_positions, self.lz)
+        np.save(f'{self.output_path}/{self.name}_resid_bins.npy', self.bins)
+
+    @staticmethod
+    @nb.jit(nopython=True)
+    def resid_into_bins(bins, bead_positions, L):
+        for resid, bpos in enumerate(bead_positions):
+            while (bpos >=  L) or (bpos < 0.):
+                bpos -= (bpos // L) *  L
+            # bpos = self.wrap_bead(bpos, L)
+            bin_idx = int(bpos)
+            bins[bin_idx, resid] += 1
+        return bins
+
+    # @staticmethod
+    # @nb.jit(nopython=True)
+    # def wrap_bead(bpos, L):
+    #     while (bpos >=  L) or (bpos < 0.):
+    #         bpos -= (bpos // L) *  L
+    #     return bpos
+
+    @staticmethod
+    def calc_cos(a,b):
+        cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
+        return cos
 
     @staticmethod
     def calc_z_Angstr(u):
@@ -788,7 +1009,21 @@ class SlabAnalysis:
 
         return eden, edil
 
-def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=None,end=None,step=1,input_pdb='top.pdb'):
+# # @staticmethod
+# @nb.jit(nopython=True)
+# def calc_cos(a,b):
+
+#     dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+#     la2 = a[0]**2 + a[1]**2 + a[2]**2
+#     lb2 = b[0]**2 + b[1]**2 + b[2]**2
+
+#     cos = dot / math.sqrt(la2 * lb2)
+#     # cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
+#     return cos
+
+def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},
+        start=None,end=None,step=1,input_pdb='top.pdb',verbose=False):
     """
     Calculate trajectory of chain COMs and per-frame Rg's for each chain.
 
@@ -851,7 +1086,11 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=N
     cmtop = md.Topology()
     xyz = np.empty((traj.n_frames,n_chains,3))
     for chain_name in chain_prop.keys():
+        if verbose:
+            print(chain_name)
         for chainid in chain_prop[chain_name]['ids']:
+            if verbose:
+                print(chainid)
             chain = traj.top.chain(chainid)
             mws = chain_prop[chain_name]['MWs']
             new_chain = cmtop.add_chain()
