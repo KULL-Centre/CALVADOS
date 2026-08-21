@@ -34,7 +34,7 @@ class Sim:
         self.comp_dict = components['system']
         self.comp_defaults = components['defaults']
 
-        self.box = np.array(self.box)
+        self.box = np.array(self.box, dtype=float)
         self.eps_lj *= 4.184 # kcal to kJ/mol
 
         if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
@@ -170,10 +170,17 @@ class Sim:
         self.pos = []
 
         if self.topol == 'slab': # proteins + rna
-            self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas,[self.box[0],self.box[1],self.slab_width])
+            slab_box = np.array(
+                [self.box[0], self.box[1], self.slab_width], dtype=float
+            )
+            self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas, slab_box)
             self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width/2.])
             if self.ncrowders > 0: # crowder
-                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.),[self.box[0],self.box[1],self.box[2]/2.-self.slab_outer])
+                crowder_box = np.array(
+                    [self.box[0], self.box[1], self.box[2]/2.-self.slab_outer],
+                    dtype=float,
+                )
+                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.), crowder_box)
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.slab_outer]), axis=0)
         elif self.topol == 'grid':
@@ -181,12 +188,20 @@ class Sim:
         if self.nlipids > 0:
             self.bilayergrid = build.build_xygrid(int(self.nlipids*1.05),self.box)
             if (self.nproteins + self.nrnas) > 0:
-                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.),[self.box[0],self.box[1],self.box[2]/2.-self.box[0]])
+                outer_box = np.array(
+                    [self.box[0], self.box[1], self.box[2]/2.-self.box[0]],
+                    dtype=float,
+                )
+                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.), outer_box)
                 self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
         if self.ncookelipids > 0:
             self.bilayergrid = build.build_xygrid(int(self.ncookelipids*1.05),self.box)
             if (self.nproteins + self.nrnas) > 0:
-                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.),[self.box[0],self.box[1],self.box[2]/2.-self.box[0]])
+                outer_box = np.array(
+                    [self.box[0], self.box[1], self.box[2]/2.-self.box[0]],
+                    dtype=float,
+                )
+                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.), outer_box)
                 self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
 
         for cidx, comp in enumerate(self.components):
@@ -313,7 +328,8 @@ class Sim:
             xs = x0 + comp.xinit
             xs -= comp.xinit[self.ref_bead]
         else:
-            xs = build.random_placement(self.box, self.pos, comp.xinit, ntries=ntries)
+            xs_others = np.array(self.pos, dtype=float)
+            xs = build.random_placement(self.box, xs_others, comp.xinit, ntries=ntries)
         for x in xs:
             self.pos.append(x)
             self.nparticles += 1
@@ -326,9 +342,10 @@ class Sim:
         #print('bilayergrid.shape',self.bilayergrid.shape)
         inserted = False
         while not inserted:
-            xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, self.pos, comp.xinit)
+            xs_others = np.array(self.pos, dtype=float)
+            xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, xs_others, comp.xinit)
             if not inserted:
-                xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, self.pos, comp.xinit, upward=False)
+                xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, xs_others, comp.xinit, upward=False)
                 idx = np.random.randint(self.bilayergrid.shape[0])
                 self.bilayergrid[0] = self.bilayergrid[idx]
                 self.bilayergrid = np.delete(self.bilayergrid,idx,axis=0)

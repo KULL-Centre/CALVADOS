@@ -27,8 +27,6 @@ dependencies = [
     "matplotlib",
     "PyYAML",
     "statsmodels",
-    "localcider",
-    "pytest",
     "numba",
     "scipy",
 ]
