@@ -16,7 +16,7 @@ authors = [
     { name = "Kresten Lindorff-Larsen", email = "lindorff@bio.ku.dk" },
 ]
 dependencies = [
-    "OpenMM>=8.2,<8.5",
+    "openmm[cuda12]>=8.2,<8.5",
     "MDAnalysis>=2.9,<2.11",
     "mdtraj>=1.11,<1.12",
     "numpy",
