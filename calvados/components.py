@@ -1,6 +1,8 @@
 import os
+from os import PathLike
 
 import numpy as np
+from numpy.typing import NDArray
 from openmm import unit
 from pandas import read_csv
 from scipy.special import expit
@@ -44,7 +46,7 @@ class Component:
                 f"Residue parameter file name (fresidues) not supplied to component {name}."
             )
 
-    def calc_comp_seq(self):
+    def calc_comp_seq(self) -> None:
         """Calculate the component sequence."""
 
         if self.restraint:
@@ -60,7 +62,7 @@ class Component:
             self.n_termini = [0]
             self.c_termini = [len(self.seq) - 1]
 
-    def calc_properties(self, pH: float = 7.0, verbose: bool = False):
+    def calc_properties(self, pH: float = 7.0, verbose: bool = False) -> None:
         """Calculate bead properties for the component."""
 
         self.calc_comp_seq()
@@ -74,7 +76,7 @@ class Component:
         self.alphas = self.lambdas * self.alpha
         self.init_bond_force()
 
-    def calc_dmap(self):
+    def calc_dmap(self) -> None:
         """Calculate the intracomponent distance map."""
         if self.periodic:
             self.dmap = self_distances(self.xinit, self.dimensions)
@@ -82,8 +84,12 @@ class Component:
             self.dmap = self_distances(self.xinit)
 
     def calc_x_setup(
-        self, d: float = 0.38, comp_setup: str = "spiral", n_per_res: int = 1, ys=None
-    ):
+        self,
+        d: float = 0.38,
+        comp_setup: str = "spiral",
+        n_per_res: int = 1,
+        ys: NDArray[np.float64] | None = None,
+    ) -> None:
         """Generate initial coordinates using the requested arrangement."""
         if comp_setup == "spiral":
             self.xinit = build.build_spiral(
@@ -96,21 +102,21 @@ class Component:
                 self.bondlengths, n_per_res=n_per_res, ys=ys
             )
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two beads should be bonded."""
         return False
 
-    def calc_bondlength(self, i: int, j: int):
+    def calc_bondlength(self, i: int, j: int) -> float:
         """Calculate the equilibrium bond length between two beads."""
         d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
         return d0
 
-    def init_bond_force(self):
+    def init_bond_force(self) -> None:
         """Initialize the harmonic bond force and its bond records."""
         self.bond_pairlist = []
         self.hb = interactions.init_bonded_interactions()
 
-    def add_bonds(self, offset):
+    def add_bonds(self, offset: int) -> list[list[int]]:
         """Add component bonds and return their nonbonded exclusions."""
         exclusion_map = []  # for ah, yu etc.
         for i in range(0, self.nbeads - 1):
@@ -129,11 +135,11 @@ class Component:
                     exclusion_map.append([i + offset, j + offset])
         return exclusion_map
 
-    def get_forces(self):
+    def get_forces(self) -> None:
         """Collect the component forces that belong in the system."""
         self.forces = [self.hb]
 
-    def write_bonds(self, path):
+    def write_bonds(self, path: str | PathLike[str]) -> None:
         """Write bond records to a file."""
 
         with open(f"{path}/bonds_{self.name}.txt", "w") as f:
@@ -151,7 +157,7 @@ class Protein(Component):
     """
 
     @staticmethod
-    def get_input_structure_file(pdb_folder, name):
+    def get_input_structure_file(pdb_folder: str | PathLike[str], name: str) -> str:
         """Return the available CIF or PDB structure filename."""
         pdb_file = f"{pdb_folder}/{name}.pdb"
         cif_file = f"{pdb_folder}/{name}.cif"
@@ -163,7 +169,7 @@ class Protein(Component):
         else:
             raise ValueError("Input structure file must be of type pdb or cif")
 
-    def calc_x_from_pdb(self):
+    def calc_x_from_pdb(self) -> None:
         """Load protein coordinates from a PDB or CIF structure."""
 
         structure_file = self.get_input_structure_file(self.pdb_folder, self.name)
@@ -172,12 +178,14 @@ class Protein(Component):
             use_com=self.use_com,
         )  # read from pdb
 
-    def calc_ssdomains(self):
+    def calc_ssdomains(self) -> None:
         """Load the structured domains used for harmonic restraints."""
 
         self.ssdomains = build.get_ssdomains(self.name, self.fdomains)
 
-    def calc_go_scale(self, bscale_shift=0.1, bscale_width=80):
+    def calc_go_scale(
+        self, bscale_shift: float = 0.1, bscale_width: float = 80
+    ) -> None:
         """Calculate Go-potential scaling for all residue pairs."""
 
         structure_file = self.get_input_structure_file(self.pdb_folder, self.name)
@@ -196,7 +204,7 @@ class Protein(Component):
 
     def calc_properties(
         self, pH: float = 7.0, verbose: bool = False, comp_setup: str = "spiral"
-    ):
+    ) -> None:
         """Calculate protein properties and initial coordinates."""
 
         super().calc_properties(pH=pH, verbose=verbose)
@@ -224,7 +232,13 @@ class Protein(Component):
         else:
             self.calc_x_setup(comp_setup=comp_setup)
 
-    def calc_bondlength(self, i, j, min_scale=0.05, cutoff_mix_in_LJYU=0.15):
+    def calc_bondlength(
+        self,
+        i: int,
+        j: int,
+        min_scale: float = 0.05,
+        cutoff_mix_in_LJYU: float = 0.15,
+    ) -> float:
         """Calculate a protein bond length, including structural restraints."""
         d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
         if self.restraint:
@@ -247,7 +261,7 @@ class Protein(Component):
             d = d0
         return d
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two protein beads should be bonded."""
 
         condition = j == i + 1
@@ -256,7 +270,7 @@ class Protein(Component):
 
     def init_restraint_force(
         self, eps_lj=None, cutoff_lj=None, cutoff_yu=None, eps_yu=None, k_yu=None
-    ):
+    ) -> None:
         """Initialize protein restraint forces and their pair records."""
         if self.restraint_type not in ["harmonic", "go"]:
             raise ValueError("Protein restraint type must be harmonic or go.")
@@ -269,7 +283,12 @@ class Protein(Component):
             self.scLJ = interactions.init_scaled_LJ(eps_lj, cutoff_lj)
             self.scYU = interactions.init_scaled_YU(eps_yu, k_yu, cutoff_yu)
 
-    def add_restraints(self, offset, min_scale=0.05, cutoff_mix_in_LJYU=0.15):
+    def add_restraints(
+        self,
+        offset: int,
+        min_scale: float = 0.05,
+        cutoff_mix_in_LJYU: float = 0.15,
+    ) -> list[list[int]]:
         """Add protein restraints and return their nonbonded exclusions."""
         exclusion_map = []  # for ah, yu etc.
 
@@ -313,7 +332,7 @@ class Protein(Component):
                 exclusion_map.append([i + offset, j + offset])
         return exclusion_map
 
-    def write_restraints(self, path):
+    def write_restraints(self, path: str | PathLike[str]) -> None:
         """Write protein restraint records to files."""
 
         with open(f"{path}/restr_{self.name}.txt", "w") as f:
@@ -336,7 +355,7 @@ class Protein(Component):
                 for r in self.scYU_pairlist:
                     f.write(f"{int(r[0])} {int(r[1])} {r[2]:.4f}\n")
 
-    def get_forces(self):
+    def get_forces(self) -> None:
         """Collect protein bond and restraint forces for the system."""
         self.forces = [self.hb]
         if self.restraint:
@@ -351,14 +370,14 @@ class RNA(Component):
     RNA components include backbone bonds, angles, and neighboring-base forces.
     """
 
-    def calc_x_from_pdb(self):
+    def calc_x_from_pdb(self) -> None:
         """Calculate RNA positions from a PDB structure."""
         pdb_file = f"{self.pdb_folder}/{self.name}.pdb"
         self.xinit, self.dimensions = build.geometry_from_pdb_rna(
             pdb_file, use_com=self.use_com
         )  # read from pdb
 
-    def calc_ssdomains(self):
+    def calc_ssdomains(self) -> None:
         """Map harmonic-restraint domains from residues to RNA beads."""
         seq_ssdomains = build.get_ssdomains(self.name, self.fdomains)
         ssdomains_bead = []
@@ -372,7 +391,7 @@ class RNA(Component):
 
     def calc_properties(
         self, pH: float = 7.0, verbose: bool = False, comp_setup: str = "spiral"
-    ):
+    ) -> None:
         """Calculate RNA properties and initial coordinates."""
 
         self.calc_comp_seq()  # --> seq and seq2
@@ -400,25 +419,25 @@ class RNA(Component):
         self.init_bond_force()
         self.init_angle_force()
 
-    def init_bond_force(self):
+    def init_bond_force(self) -> None:
         """Initialize RNA bond and neighboring-base forces."""
         self.bond_pairlist = []
         self.hb = interactions.init_bonded_interactions()
         self.basebase_pairlist = []
         self.scLJ_rna = interactions.init_scaled_LJ(self.eps_lj, self.rna_nb_cutoff)
 
-    def init_angle_force(self):
+    def init_angle_force(self) -> None:
         """Initialize the RNA angle force and its angle records."""
         self.angle_list = []
         self.ha = interactions.init_angles()
 
-    def get_forces(self):
+    def get_forces(self) -> None:
         """Collect RNA bond, angle, base, and restraint forces."""
         self.forces = [self.hb, self.scLJ_rna, self.ha]
         if self.restraint:
             self.forces.append(self.cs)
 
-    def calc_comp_seq(self):
+    def calc_comp_seq(self) -> None:
         """Calculate the one- and two-bead RNA sequences."""
 
         if self.restraint:
@@ -444,7 +463,7 @@ class RNA(Component):
         self.n_termini = [x for i in n_termini_seq for x in (2 * i, 2 * i + 1)]
         self.c_termini = [x for i in c_termini_seq for x in (2 * i, 2 * i + 1)]
 
-    def calc_bondlength(self, i, j):
+    def calc_bondlength(self, i: int, j: int) -> float:
         """Calculate an RNA bond length, including structural restraints."""
         d0 = self.bondlengths[j]
         if self.restraint:
@@ -457,7 +476,7 @@ class RNA(Component):
             d = d0
         return d
 
-    def calc_rna_nb_sigma_length(self, i, j):
+    def calc_rna_nb_sigma_length(self, i: int, j: int) -> float:
         """Calculate the sigma value for neighboring RNA bases."""
         sig0 = self.rna_nb_sigma
         if self.restraint:
@@ -470,7 +489,7 @@ class RNA(Component):
             sig = sig0
         return sig
 
-    def calc_angmap(self):
+    def calc_angmap(self) -> None:
         """Calculate equilibrium backbone angles from initial coordinates."""
         nbeads = len(self.xinit)
         angmap = np.zeros(nbeads)
@@ -483,7 +502,7 @@ class RNA(Component):
             angmap[i] = np.arccos(cos)
         self.angmap = angmap
 
-    def calc_angle(self, i, j):
+    def calc_angle(self, i: int, j: int) -> float:
         """Calculate an RNA backbone angle, including structural restraints."""
         ang0 = self.rna_pa
         if self.restraint:
@@ -496,7 +515,7 @@ class RNA(Component):
             ang = ang0
         return ang
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two RNA beads should be bonded."""
 
         condition0 = i % 2 == 0  # phosphate
@@ -508,7 +527,7 @@ class RNA(Component):
         condition_termini = not ((i in self.c_termini) and (j in self.n_termini))
         return condition and condition_termini
 
-    def angle_check(self, i: int, j: int):
+    def angle_check(self, i: int, j: int) -> bool:
         """Return whether two RNA beads define a backbone angle."""
 
         condition = (i % 2 == 0) and (j == i + 4)
@@ -517,7 +536,7 @@ class RNA(Component):
         )
         return condition and condition_termini
 
-    def basebase_check(self, i: int, j: int):
+    def basebase_check(self, i: int, j: int) -> bool:
         """Return whether two RNA beads are neighboring bases."""
 
         condition = (i % 2 == 1) and (j == i + 2)
@@ -526,7 +545,7 @@ class RNA(Component):
 
     def calc_x_setup(
         self, comp_setup: str = "spiral", d: float = 0.59, n_per_res: int = 2
-    ):
+    ) -> None:
         """Generate initial coordinates for the two-bead RNA model."""
         if comp_setup == "spiral":
             self.xinit = build.build_spiral(
@@ -538,7 +557,7 @@ class RNA(Component):
                 z_bondlengths, n_per_res=n_per_res, ys=self.bondlengths
             )
 
-    def add_bonds(self, offset):
+    def add_bonds(self, offset: int) -> list[list[int]]:
         """Add RNA bonds and neighboring-base forces and return exclusions."""
         exclusion_map = []
         for i in range(0, self.nbeads - 1):
@@ -578,7 +597,7 @@ class RNA(Component):
                     exclusion_map.append([i + offset, j + offset])
         return exclusion_map
 
-    def add_angles(self, offset):
+    def add_angles(self, offset: int) -> list[list[int]]:
         """Add RNA backbone angles and return their nonbonded exclusions."""
         exclusion_map = []
         for i in range(0, self.nbeads - 1):
@@ -605,12 +624,14 @@ class RNA(Component):
                     exclusion_map.append([i + offset, j + offset])
         return exclusion_map
 
-    def init_restraint_force(self, eps_lj=None, cutoff_lj=None, eps_yu=None, k_yu=None):
+    def init_restraint_force(
+        self, eps_lj=None, cutoff_lj=None, eps_yu=None, k_yu=None
+    ) -> None:
         """Initialize the RNA restraint force and its pair records."""
         self.cs = interactions.init_restraints(self.restraint_type)
         self.restr_pairlist = []
 
-    def restraint_check(self, i: int, j: int):
+    def restraint_check(self, i: int, j: int) -> bool:
         """Return whether a bead pair is eligible for a restraint."""
 
         bond_condition = self.bond_check(i, j)
@@ -624,7 +645,7 @@ class RNA(Component):
 
         return condition or condition_termini
 
-    def add_restraints(self, offset, min_scale=0.1):
+    def add_restraints(self, offset: int, min_scale: float = 0.1) -> list[list[int]]:
         """Add RNA restraints and return their nonbonded exclusions."""
         exclusion_map = []  # for ah, yu etc.
         for i in range(self.nbeads - 2):
@@ -653,7 +674,7 @@ class RNA(Component):
                         raise ValueError("RNA restraint type must be harmonic.")
         return exclusion_map
 
-    def write_bonds(self, path):
+    def write_bonds(self, path: str | PathLike[str]) -> None:
         """Write RNA bond, neighboring-base, and angle records to files."""
 
         with open(f"{path}/bonds_{self.name}.txt", "w") as f:
@@ -677,7 +698,7 @@ class RNA(Component):
                     f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{int(b[3])}\t{b[4]:.4f}\t{b[5]:.4f}\n"
                 )
 
-    def write_restraints(self, path):
+    def write_restraints(self, path: str | PathLike[str]) -> None:
         """Write RNA restraint records to a file."""
 
         with open(f"{path}/restr_{self.name}.txt", "w") as f:

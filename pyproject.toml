@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "calvados"
-version = "0.8.1"
+version = "0.9.0"
 description = "Coarse-grained implicit-solvent simulations of biomolecules"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
