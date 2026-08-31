@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def xconv(x,N=5):
     xf = np.convolve(x, np.ones(N)/N, mode='same')
     return xf

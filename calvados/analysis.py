@@ -16,7 +16,6 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.stats import sem
 
 from calvados.build import get_ssdomains
-from calvados.sequence import seq_from_pdb
 
 import matplotlib.pyplot as plt
 

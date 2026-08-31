@@ -1,6 +1,7 @@
+from collections.abc import Sequence
 from json import load
 from os import PathLike
-from typing import Literal, Sequence
+from typing import Literal
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
@@ -13,7 +14,6 @@ from scipy import constants
 from yaml import safe_load
 
 from .sequence import calc_mw
-
 
 ################ SYSTEM BUILDING FUNCTIONS ################
 

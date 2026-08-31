@@ -1,21 +1,18 @@
-import numpy as np
-import openmm
-from openmm import app, unit
-
+import os
 from datetime import datetime
 
 import mdtraj as md
-
+import numpy as np
+import openmm
+from Bio.SeqUtils import seq3
+from openmm import app, unit
 from tqdm import tqdm
-import os
+from yaml import safe_load
 
 from calvados import build, interactions
 
-from yaml import safe_load
-
-from Bio.SeqUtils import seq3
-
 from .components import *
+
 
 class Sim:
     def __init__(self,path,config,components):

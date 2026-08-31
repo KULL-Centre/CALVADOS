@@ -1,12 +1,10 @@
-from jinja2 import Template
-
+import json
 import os
+from importlib import resources
 from time import sleep
 
-from importlib import resources
-
 import yaml
-import json
+from jinja2 import Template
 
 ###########################
 
