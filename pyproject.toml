@@ -15,6 +15,11 @@ authors = [
     { name = "Fan Cao", email = "fan.cao@bio.ku.dk" },
     { name = "Kresten Lindorff-Larsen", email = "lindorff@bio.ku.dk" },
 ]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "openmm[cuda12]>=8.2,<8.5",
     "MDAnalysis>=2.9,<2.11",
@@ -37,12 +42,6 @@ dev = [
     "pytest-cov>=4,<8",
     "mypy>=1.10,<2",
     "ruff>=0.4,<1",
-]
-
-classifiers = [
-    "Intended Audience :: Science/Research",
-    "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3.13",
 ]
 
 [project.urls]

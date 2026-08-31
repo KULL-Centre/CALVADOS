@@ -1,8 +1,18 @@
+from typing import Literal, Sequence
+
 import numpy as np
 from openmm import openmm, unit
 
-def genParamsDH(temp,ionic):
-    """ Debye-Huckel parameters. """
+RestType = Literal['harmonic', 'go']
+
+
+def genParamsDH(temp: float, ionic: float) -> tuple[float, float]:
+    """Calculate the Yukawa prefactor and inverse Debye length."""
+
+    if temp <= 0:
+        raise ValueError('Temperature [K] must be positive.')
+    if ionic < 0:
+        raise ValueError('Ionic strength [M] must not be negative.')
 
     kT = 8.3145*temp*1e-3
     # Calculate the prefactor for the Yukawa potential
@@ -14,8 +24,8 @@ def genParamsDH(temp,ionic):
     k_yu = np.sqrt(8*np.pi*lB*ionic*6.02214076/10)
     return eps_yu, k_yu
 
-def init_bonded_interactions():
-    """ Define bonded interactions. """
+def init_bonded_interactions() -> openmm.HarmonicBondForce:
+    """Initialize a periodic harmonic bond force."""
 
     # harmonic bonds
     hb = openmm.HarmonicBondForce()
@@ -23,8 +33,10 @@ def init_bonded_interactions():
 
     return hb
 
-def init_ah_interactions(eps,rc,fixed_lambda):
-    """ Define Ashbaugh-Hatch interactions. """
+def init_ah_interactions(
+    eps: float, rc: float, fixed_lambda: float
+) -> openmm.CustomNonbondedForce:
+    """Initialize the periodic Ashbaugh-Hatch interaction."""
 
     # intermolecular interactions
     energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
@@ -43,8 +55,10 @@ def init_ah_interactions(eps,rc,fixed_lambda):
     print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*unit.kilojoules_per_mole)
     return ah
 
-def init_yu_interactions(eps, k, rc):
-    """ Define Yukawa interactions. """
+def init_yu_interactions(
+    eps: float, k: float, rc: float
+) -> openmm.CustomNonbondedForce:
+    """Initialize the shifted periodic Yukawa interaction."""
 
     shift = np.exp(-k*rc)/rc
     yu = openmm.CustomNonbondedForce(f'q*{eps}*(exp(-{k}*r)/r-{shift}); q=q1*q2')
@@ -59,46 +73,68 @@ def init_yu_interactions(eps, k, rc):
 
     return yu
 
-def init_nonbonded_interactions(eps_lj,cutoff_lj,eps_yu,k_yu,cutoff_yu,fixed_lambda):
-    """ Define protein interaction expressions (without restraints). """
+def init_nonbonded_interactions(
+    eps_lj: float,
+    cutoff_lj: float,
+    eps_yu: float,
+    k_yu: float,
+    cutoff_yu: float,
+    fixed_lambda: float,
+) -> tuple[openmm.CustomNonbondedForce, openmm.CustomNonbondedForce]:
+    """Initialize protein nonbonded forces without restraints."""
+
+    if cutoff_lj <= 0:
+        raise ValueError('LJ cutoff must be positive.')
+    if cutoff_yu <= 0:
+        raise ValueError('YU cutoff must be positive.')
 
     ah = init_ah_interactions(eps_lj, cutoff_lj, fixed_lambda)
     yu = init_yu_interactions(eps_yu, k_yu, cutoff_yu)
 
     return ah, yu
 
-def init_angles():
+def init_angles() -> openmm.HarmonicAngleForce:
+    """Initialize a periodic harmonic angle force."""
+
     ha = openmm.HarmonicAngleForce()
     ha.setUsesPeriodicBoundaryConditions(True)
     return ha
 
-def init_lipid_interactions(eps_lj, eps_yu, cutoff_yu, factor=1.9):
-    """ Define lipid interaction expressions. """
+def init_lipid_interactions(
+    eps_lj: float, eps_yu: float, cutoff_yu: float, factor: float = 1.9
+) -> tuple[openmm.CustomNonbondedForce, openmm.CustomNonbondedForce]:
+    """Initialize cosine and charge-nonpolar lipid interactions."""
 
     # harmonic angles
     cos = init_cosine_interactions(factor*eps_lj)
     cn = init_charge_nonpolar_interactions(eps_yu, cutoff_yu)
     return cos, cn
 
-def init_wcafene(eps_lj):
+def init_wcafene(eps_lj: float) -> openmm.CustomBondForce:
+    """Initialize the WCA-FENE force with the lipid energy scale."""
+
     wcafene = init_wcafene_interactions(3*eps_lj)
     return wcafene
 
-def init_restraints(restraint_type):
-    """ Initialize restraints. """
+def init_restraints(
+    restraint_type: RestType,
+) -> openmm.HarmonicBondForce | openmm.CustomBondForce:
+    """Initialize a periodic harmonic or Go restraint force."""
 
     if restraint_type == 'harmonic':
         cs = openmm.HarmonicBondForce()
-    if restraint_type == 'go':
+    elif restraint_type == 'go':
         go_expr = 'k*(5*(s/r)^12-6*(s/r)^10)'
         cs = openmm.CustomBondForce(go_expr+'; s=s; k=k')#; shift=(0.5*(s)/rc)^12-(0.5*(s)/rc)^6')
         cs.addPerBondParameter('s')
         cs.addPerBondParameter('k')
+    else:
+        raise ValueError("restraint_type must be harmonic or go.")
     cs.setUsesPeriodicBoundaryConditions(True)
     return cs
 
-def init_scaled_LJ(eps_lj,cutoff_lj):
-    """ Initialize restraints. """
+def init_scaled_LJ(eps_lj: float, cutoff_lj: float) -> openmm.CustomBondForce:
+    """Initialize scaled Ashbaugh-Hatch bonded interactions."""
 
     energy_expression = 'select(step(r-2^(1/6)*s),n*4*eps*l*((s/r)^12-(s/r)^6-shift),n*4*eps*((s/r)^12-(s/r)^6-l*shift)+n*eps*(1-l))'
     scLJ = openmm.CustomBondForce(energy_expression+'; shift=(s/rc)^12-(s/rc)^6')
@@ -110,18 +146,29 @@ def init_scaled_LJ(eps_lj,cutoff_lj):
     scLJ.setUsesPeriodicBoundaryConditions(True)
     return scLJ
 
-def init_scaled_YU(eps_yu,k_yu):
-    """ Initialize restraints. """
+def init_scaled_YU(
+    eps_yu: float, k_yu: float, cutoff_yu: float
+) -> openmm.CustomBondForce:
+    """Initialize scaled Yukawa bonded interactions."""
 
-    shift = np.exp(-k_yu*4.0)/4.0
+    shift = np.exp(-k_yu*cutoff_yu)/cutoff_yu
     scYU = openmm.CustomBondForce(f'n*q*{eps_yu}*(exp(-{k_yu}*r)/r-{shift})')
     scYU.addPerBondParameter('q')
     scYU.addPerBondParameter('n')
     scYU.setUsesPeriodicBoundaryConditions(True)
     return scYU
 
-def init_slab_restraints(box,k,axis=[False,False,True]):
-    """ Define restraints towards box center in z direction. """
+def init_slab_restraints(
+        box: Sequence[float],
+        k: float,
+        axis: Sequence[bool] = (False, False, True),
+) -> openmm.CustomExternalForce:
+    """Initialize restraints toward the box center along selected axes."""
+
+    if len(box) != 3:
+        raise ValueError("box argument must have length 3.")
+    if len(axis) != 3:
+        raise ValueError("axis argument must have length 3.")
 
     x = 'x0' if axis[0] else 'x'
     y = 'y0' if axis[1] else 'y'
@@ -140,10 +187,12 @@ def init_slab_restraints(box,k,axis=[False,False,True]):
     return rcent
 
 def add_single_restraint(
-        cs, restraint_type: str,
+        cs: openmm.HarmonicBondForce | openmm.CustomBondForce,
+        restraint_type: RestType,
         dij: float, k: float,
-        i: int, j: int):
-    """ Add single harmonic or Go restraint. """
+        i: int, j: int,
+) -> tuple[openmm.HarmonicBondForce | openmm.CustomBondForce, list[int | float]]:
+    """Add one harmonic or Go restraint and return its one-based record."""
 
     if restraint_type == 'harmonic':
         cs.addBond(
@@ -153,11 +202,15 @@ def add_single_restraint(
         cs.addBond(
                 i,j, [dij*unit.nanometer,
                 k*unit.kilojoules_per_mole])
+    else:
+        raise ValueError("restraint_type must be harmonic or go")
     restr_pair = [i+1, j+1, dij, k] # 1-based
     return cs, restr_pair
 
-def add_scaled_lj(scLJ, i, j, offset, comp):
-    """ Add downscaled LJ interaction. """
+def add_scaled_lj(
+    scLJ: openmm.CustomBondForce, i: int, j: int, offset: int, comp
+) -> tuple[openmm.CustomBondForce, list[int | float]]:
+    """Add one scaled Ashbaugh-Hatch bond and its one-based record."""
 
     s = 0.5 * (comp.sigmas[i] + comp.sigmas[j])
     l = 0.5 * (comp.lambdas[i] + comp.lambdas[j])
@@ -165,21 +218,25 @@ def add_scaled_lj(scLJ, i, j, offset, comp):
     scaled_pair = [i+offset+1, j+offset+1, s, l, comp.bondscale[i,j]] # 1-based
     return scLJ, scaled_pair
 
-def add_scaled_yu(scYU, i, j, offset, comp):
-    """ Add downsscaled YU interaction. """
+def add_scaled_yu(
+    scYU: openmm.CustomBondForce, i: int, j: int, offset: int, comp
+) -> tuple[openmm.CustomBondForce, list[int | float]]:
+    """Add one scaled Yukawa bond and its one-based record."""
 
     qij = comp.qs[i] * comp.qs[j] * unit.dimensionless
     scYU.addBond(i+offset, j+offset, [qij, comp.bondscale[i,j]*unit.dimensionless])
     scaled_pair = [i+offset+1, j+offset+1, comp.bondscale[i,j]] # 1-based
     return scYU, scaled_pair
 
-def add_exclusion(force, i: int, j: int):
-    """ Add exclusions to a list of openMM forces """
+def add_exclusion(
+    force: openmm.CustomNonbondedForce, i: int, j: int
+) -> openmm.CustomNonbondedForce:
+    """Add a particle-pair exclusion to a nonbonded force."""
     force.addExclusion(i,j)
     return force
 
-def init_wcafene_interactions(eps):
-    """ Define FENE interaction. """
+def init_wcafene_interactions(eps: float) -> openmm.CustomBondForce:
+    """Initialize the periodic WCA-FENE bond interaction."""
 
     wca_expression = f'4*{eps}*select(step(r-2^(1/6)*s),0,(s/r)^12-(s/r)^6+1/4)'
     fene_expression = '+ -0.5*kfene*(rinf^2)*log(1-(r/rinf)^2); rinf=1.5*s'
@@ -189,8 +246,8 @@ def init_wcafene_interactions(eps):
     wcafene.setUsesPeriodicBoundaryConditions(True)
     return wcafene
 
-def init_cosine_interactions(eps):
-    """ Define cosine interaction (Cooke and Deserno lipid model, DOI: https://doi.org/10.1063/1.2135785). """
+def init_cosine_interactions(eps: float) -> openmm.CustomNonbondedForce:
+    """Initialize the Cooke-Deserno cosine interaction."""
 
     cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
     cosine = openmm.CustomNonbondedForce(cosine_expression+'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
@@ -202,8 +259,10 @@ def init_cosine_interactions(eps):
     cosine.setForceGroup(2)
     return cosine
 
-def init_charge_nonpolar_interactions(eps,rc):
-    """ Define charge-nonpolar interaction (lipid model, DOI: https://doi.org/10.1063/1.5058234 and DOI: https://doi.org/10.1073/pnas.2311700120). """
+def init_charge_nonpolar_interactions(
+    eps: float, rc: float
+) -> openmm.CustomNonbondedForce:
+    """Initialize the lipid charge-nonpolar interaction."""
 
     cn = openmm.CustomNonbondedForce(f'-step(id1+id2)*{eps}*alphaq2R3/2*(1/r-1/{rc}); alphaq2R3=alpha1*q2^2*R31+alpha2*q1^2*R32')
     cn.addPerParticleParameter('R3')
@@ -214,4 +273,3 @@ def init_charge_nonpolar_interactions(eps,rc):
     cn.setCutoffDistance(rc*unit.nanometer)
     cn.setForceGroup(1)
     return cn
-

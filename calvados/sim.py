@@ -89,6 +89,7 @@ class Sim:
                 if comp.restraint_type == 'go':
                     comp.init_restraint_force(
                         eps_lj=self.eps_lj, cutoff_lj=self.cutoff_lj,
+                        cutoff_yu=self.cutoff_yu,
                         eps_yu=self.eps_yu, k_yu = self.k_yu
                     )
                 else:
