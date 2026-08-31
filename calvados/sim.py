@@ -76,9 +76,7 @@ class Sim:
                 comp_setup = 'compact'
                 comp = PTMProtein(name, properties, self.comp_defaults)
             else:
-                # Generic component
-                comp_setup = 'linear'
-                comp = Component(name, properties, self.comp_defaults)
+                raise ValueError(f"Component of type {molecule_type} not found.")
 
             comp.eps_lj = self.eps_lj
             comp.calc_properties(pH=self.pH, verbose=self.verbose, comp_setup=comp_setup)
@@ -467,8 +465,9 @@ class Sim:
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom('CA', element=md.element.carbon, residue=res)
             for i in range(chain.n_atoms-1):
-                if comp.bond_check(i,i+1):
-                    self.top.add_bond(chain.atom(i), chain.atom(i+1))
+                for j in range(i+1, chain.n_atoms):
+                    if comp.bond_check(i,j):
+                        self.top.add_bond(chain.atom(i), chain.atom(j))
 
     def add_particles_system(self,mws):
         """ Add particles of one molecule to openMM system. """
