@@ -1,27 +1,49 @@
-from typing import Literal, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 from openmm import openmm, unit
 
 RestType = Literal['harmonic', 'go']
 
+GAS_CONSTANT = 8.3145  # J mol^-1 K^-1
+ELEMENTARY_CHARGE = 1.6021766  # 10^-19 C
+VACUUM_PERMITTIVITY = 8.854188  # 10^-12 F m^-1
+AVOGADRO_CONSTANT = 6.02214076  # 10^23 mol^-1
+
+
+def _calc_relative_permittivity(temp: float) -> float:
+    """Calculate the relative permittivity of water at a temperature in K."""
+    return (
+        5321 / temp
+        + 233.76
+        - 0.9297 * temp
+        + 0.1417 * 1e-2 * temp * temp
+        - 0.8292 * 1e-6 * temp**3
+    )
+
 
 def genParamsDH(temp: float, ionic: float) -> tuple[float, float]:
-    """Calculate the Yukawa prefactor and inverse Debye length."""
+    """Calculate the Yukawa prefactor in kJ/mol and inverse Debye length in nm^-1."""
 
     if temp <= 0:
         raise ValueError('Temperature [K] must be positive.')
     if ionic < 0:
         raise ValueError('Ionic strength [M] must not be negative.')
 
-    kT = 8.3145*temp*1e-3
-    # Calculate the prefactor for the Yukawa potential
-    fepsw = lambda T : 5321/T+233.76-0.9297*T+0.1417*1e-2*T*T-0.8292*1e-6*T**3
-    epsw = fepsw(temp)
-    lB = 1.6021766**2/(4*np.pi*8.854188*epsw)*6.02214076*1000/kT
-    eps_yu = lB*kT
-    # Calculate the inverse of the Debye length
-    k_yu = np.sqrt(8*np.pi*lB*ionic*6.02214076/10)
+    thermal_energy = GAS_CONSTANT*temp*1e-3
+    relative_permittivity = _calc_relative_permittivity(temp)
+    # The scaled physical constants and factor 1000 give a length in nm.
+    bjerrum_length = (
+        ELEMENTARY_CHARGE**2
+        / (4*np.pi*VACUUM_PERMITTIVITY*relative_permittivity)
+        * AVOGADRO_CONSTANT*1000/thermal_energy
+    )
+    eps_yu = bjerrum_length*thermal_energy
+    # AVOGADRO_CONSTANT/10 converts mol L^-1 to particles nm^-3.
+    k_yu = np.sqrt(
+        8*np.pi*bjerrum_length*ionic*AVOGADRO_CONSTANT/10
+    )
     return eps_yu, k_yu
 
 def init_bonded_interactions() -> openmm.HarmonicBondForce:
@@ -39,9 +61,19 @@ def init_ah_interactions(
     """Initialize the periodic Ashbaugh-Hatch interaction."""
 
     # intermolecular interactions
-    energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
-    #ah = openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/{rc})^12-(0.5*(s1+s2)/{rc})^6')
-    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
+    energy_expression = (
+        f'{eps}*select(step(r-2^(1/6)*s),'
+        '4*l*((s/r)^12-(s/r)^6-shift),'
+        '4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
+    )
+    parameter_expression = (
+        f'; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda})'
+        f'; shift=(s/{rc})^12-(s/{rc})^6'
+        '; s=0.5*(s1+s2)'
+    )
+    ah = openmm.CustomNonbondedForce(
+        energy_expression + parameter_expression
+    )
 
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
@@ -61,7 +93,11 @@ def init_yu_interactions(
     """Initialize the shifted periodic Yukawa interaction."""
 
     shift = np.exp(-k*rc)/rc
-    yu = openmm.CustomNonbondedForce(f'q*{eps}*(exp(-{k}*r)/r-{shift}); q=q1*q2')
+    energy_expression = (
+        f'q*{eps}*(exp(-{k}*r)/r-{shift})'
+        '; q=q1*q2'
+    )
+    yu = openmm.CustomNonbondedForce(energy_expression)
     yu.addPerParticleParameter('q')
 
     print('Debye-Hückel potential between unit charges at',rc*unit.nanometer,end=': ')
@@ -89,7 +125,9 @@ def init_nonbonded_interactions(
         raise ValueError('YU cutoff must be positive.')
 
     ah = init_ah_interactions(eps_lj, cutoff_lj, fixed_lambda)
+    ah.setName('AH')
     yu = init_yu_interactions(eps_yu, k_yu, cutoff_yu)
+    yu.setName('YU')
 
     return ah, yu
 
@@ -111,10 +149,9 @@ def init_lipid_interactions(
     return cos, cn
 
 def init_wcafene(eps_lj: float) -> openmm.CustomBondForce:
-    """Initialize the WCA-FENE force with the lipid energy scale."""
+    """Initialize WCA-FENE interactions with an energy scale of 3*eps_lj."""
 
-    wcafene = init_wcafene_interactions(3*eps_lj)
-    return wcafene
+    return init_wcafene_interactions(3*eps_lj)
 
 def init_restraints(
     restraint_type: RestType,
@@ -136,8 +173,13 @@ def init_restraints(
 def init_scaled_LJ(eps_lj: float, cutoff_lj: float) -> openmm.CustomBondForce:
     """Initialize scaled Ashbaugh-Hatch bonded interactions."""
 
-    energy_expression = 'select(step(r-2^(1/6)*s),n*4*eps*l*((s/r)^12-(s/r)^6-shift),n*4*eps*((s/r)^12-(s/r)^6-l*shift)+n*eps*(1-l))'
-    scLJ = openmm.CustomBondForce(energy_expression+'; shift=(s/rc)^12-(s/rc)^6')
+    energy_expression = (
+        'select(step(r-2^(1/6)*s),'
+        'n*4*eps*l*((s/r)^12-(s/r)^6-shift),'
+        'n*4*eps*((s/r)^12-(s/r)^6-l*shift)+n*eps*(1-l))'
+        '; shift=(s/rc)^12-(s/rc)^6'
+    )
+    scLJ = openmm.CustomBondForce(energy_expression)
     scLJ.addGlobalParameter('eps',eps_lj*unit.kilojoules_per_mole)
     scLJ.addGlobalParameter('rc',float(cutoff_lj)*unit.nanometer)
     scLJ.addPerBondParameter('s')
@@ -152,7 +194,11 @@ def init_scaled_YU(
     """Initialize scaled Yukawa bonded interactions."""
 
     shift = np.exp(-k_yu*cutoff_yu)/cutoff_yu
-    scYU = openmm.CustomBondForce(f'n*q*{eps_yu}*(exp(-{k_yu}*r)/r-{shift})')
+    energy_expression = (
+        f'n*q*{eps_yu}*'
+        f'(exp(-{k_yu}*r)/r-{shift})'
+    )
+    scYU = openmm.CustomBondForce(energy_expression)
     scYU.addPerBondParameter('q')
     scYU.addPerBondParameter('n')
     scYU.setUsesPeriodicBoundaryConditions(True)
@@ -174,7 +220,6 @@ def init_slab_restraints(
     y = 'y0' if axis[1] else 'y'
     z = 'z0' if axis[2] else 'z'
 
-    mindim = np.amin(box)
     rcent_expr = f'k*abs(periodicdistance(x,y,z,{x},{y},{z}))'
     rcent = openmm.CustomExternalForce(rcent_expr)
     rcent.addGlobalParameter('k',k*unit.kilojoules_per_mole/unit.nanometer)
@@ -182,8 +227,6 @@ def init_slab_restraints(
     for idx, a0 in enumerate([x,y,z]):
         if axis[idx]:
             rcent.addGlobalParameter(a0,box[idx]/2.*unit.nanometer) # center of box in axis dim.
-    # rcent.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
-    # rcent.setCutoffDistance(mindim/2.*unit.nanometer)
     return rcent
 
 def add_single_restraint(
@@ -238,8 +281,14 @@ def add_exclusion(
 def init_wcafene_interactions(eps: float) -> openmm.CustomBondForce:
     """Initialize the periodic WCA-FENE bond interaction."""
 
-    wca_expression = f'4*{eps}*select(step(r-2^(1/6)*s),0,(s/r)^12-(s/r)^6+1/4)'
-    fene_expression = '+ -0.5*kfene*(rinf^2)*log(1-(r/rinf)^2); rinf=1.5*s'
+    wca_expression = (
+        f'4*{eps}*select(step(r-2^(1/6)*s),0,'
+        '(s/r)^12-(s/r)^6+1/4)'
+    )
+    fene_expression = (
+        '+ -0.5*kfene*(rinf^2)*log(1-(r/rinf)^2)'
+        '; rinf=1.5*s'
+    )
     wcafene = openmm.CustomBondForce(wca_expression+fene_expression)
     wcafene.addPerBondParameter('s')
     wcafene.addPerBondParameter('kfene')
@@ -249,8 +298,20 @@ def init_wcafene_interactions(eps: float) -> openmm.CustomBondForce:
 def init_cosine_interactions(eps: float) -> openmm.CustomNonbondedForce:
     """Initialize the Cooke-Deserno cosine interaction."""
 
-    cosine_expression = f'prefactor*select(step(r-rc-1.5*s),0,select(step(r-rc),-{eps}*(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
-    cosine = openmm.CustomNonbondedForce(cosine_expression+'; prefactor=select(id1*id2,1-delta(l1*l2),(id1+id2)*l1*l2); rc=2^(1/6)*s; s=0.5*(s1+s2)')
+    cosine_expression = (
+        'prefactor*select(step(r-rc-1.5*s),0,'
+        f'select(step(r-rc),-{eps}*'
+        f'(cos({np.pi}*(r-rc)/(2*1.5*s)))^2,-{eps}))'
+    )
+    parameter_expression = (
+        '; prefactor=select(id1*id2,1-delta(l1*l2),'
+        '(id1+id2)*l1*l2)'
+        '; rc=2^(1/6)*s'
+        '; s=0.5*(s1+s2)'
+    )
+    cosine = openmm.CustomNonbondedForce(
+        cosine_expression + parameter_expression
+    )
     cosine.addPerParticleParameter('s')
     cosine.addPerParticleParameter('l')
     cosine.addPerParticleParameter('id')
@@ -264,7 +325,11 @@ def init_charge_nonpolar_interactions(
 ) -> openmm.CustomNonbondedForce:
     """Initialize the lipid charge-nonpolar interaction."""
 
-    cn = openmm.CustomNonbondedForce(f'-step(id1+id2)*{eps}*alphaq2R3/2*(1/r-1/{rc}); alphaq2R3=alpha1*q2^2*R31+alpha2*q1^2*R32')
+    energy_expression = (
+        f'-step(id1+id2)*{eps}*alphaq2R3/2*(1/r-1/{rc})'
+        '; alphaq2R3=alpha1*q2^2*R31+alpha2*q1^2*R32'
+    )
+    cn = openmm.CustomNonbondedForce(energy_expression)
     cn.addPerParticleParameter('R3')
     cn.addPerParticleParameter('alpha')
     cn.addPerParticleParameter('q')

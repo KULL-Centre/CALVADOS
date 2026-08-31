@@ -240,14 +240,14 @@ class Protein(Component):
                     exclusion_map.append([i+offset,j+offset])
         return exclusion_map
 
-    def init_restraint_force(self, eps_lj=None, cutoff_lj=None, eps_yu=None, k_yu=None):
+    def init_restraint_force(self, eps_lj=None, cutoff_lj=None, cutoff_yu=None, eps_yu=None, k_yu=None):
         self.cs = interactions.init_restraints(self.restraint_type)
         self.restr_pairlist = []
         if self.restraint_type == 'go':
             self.scLJ_pairlist = []
             self.scYU_pairlist = []
             self.scLJ = interactions.init_scaled_LJ(eps_lj,cutoff_lj)
-            self.scYU = interactions.init_scaled_YU(eps_yu,k_yu)
+            self.scYU = interactions.init_scaled_YU(eps_yu,k_yu,cutoff_yu)
 
     def add_restraints(self, offset, min_scale = 0.05, cutoff_mix_in_LJYU = 0.15):
         """ Add restraints. """
