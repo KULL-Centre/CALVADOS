@@ -5,6 +5,7 @@ import yaml
 from pydantic import ValidationError
 
 from calvados.cfg import Components, Config, Job
+from calvados.inputmodels import ComponentInput, SimulationInput, validate_inputs
 
 
 def test_config_uses_model_defaults_and_serializes_values(tmp_path: Path) -> None:
@@ -72,3 +73,51 @@ def test_job_rejects_unknown_fields() -> None:
             fbash="/tmp/test.bashrc",
             queue="qgpu",
         )
+
+
+def test_validate_inputs_resolves_component_defaults_and_overrides() -> None:
+    config_model, component_models = validate_inputs(
+        config={
+            "box": [8, 8, 8],
+            "temp": 293.15,
+            "ionic": 0.15,
+            "pH": 7.0,
+        },
+        components={
+            "defaults": {
+                "fresidues": "residues.csv",
+                "nmol": 1,
+            },
+            "system": {
+                "A": {"nmol": 2},
+                "B": {"molecule_type": "rna"},
+            },
+        },
+    )
+
+    assert isinstance(config_model, SimulationInput)
+    assert all(
+        isinstance(component, ComponentInput)
+        for component in component_models.values()
+    )
+    assert component_models["A"].name == "A"
+    assert component_models["A"].nmol == 2
+    assert component_models["A"].molecule_type == "protein"
+    assert component_models["B"].nmol == 1
+    assert component_models["B"].molecule_type == "rna"
+    assert component_models["B"].fresidues == "residues.csv"
+
+
+def test_validate_inputs_rejects_malformed_component_sections() -> None:
+    config = {
+        "box": [8, 8, 8],
+        "temp": 293.15,
+        "ionic": 0.15,
+        "pH": 7.0,
+    }
+
+    with pytest.raises(ValueError, match="Unknown components input sections"):
+        validate_inputs(config, {"defaults": {}, "system": {}, "other": {}})
+
+    with pytest.raises(TypeError, match="component system must be a mapping"):
+        validate_inputs(config, {"defaults": {}, "system": []})

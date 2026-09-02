@@ -12,6 +12,7 @@ from yaml import safe_load
 from calvados import build, interactions
 
 from .components import *
+from .inputmodels import validate_inputs
 
 
 class Sim:
@@ -21,15 +22,10 @@ class Sim:
         parameters are provided by config dictionary """
 
         self.path = path
-        # parse config
-        for key, val in config.items():
+        self.config_model, self.comp_dict = validate_inputs(config, components)
+
+        for key, val in self.config_model.model_dump(mode="python").items():
             setattr(self, key, val)
-
-        for key, val in components['defaults'].items():
-            setattr(self, f'default_{key}', val)
-
-        self.comp_dict = components['system']
-        self.comp_defaults = components['defaults']
 
         self.box = np.array(self.box, dtype=float)
         self.eps_lj *= 4.184 # kcal to kJ/mol
@@ -47,34 +43,34 @@ class Sim:
     def make_components(self):
         self.components = np.empty(0)
         self.use_restraints = False
-        # comp_setup = 'spiral' if self.topol=='shift_ref_bead' else 'linear'
-        for name, properties in self.comp_dict.items():
-            molecule_type = properties.get('molecule_type', self.default_molecule_type)
+
+        for name, comp_params in self.comp_dict.items():
+            molecule_type = comp_params.molecule_type
             if molecule_type == 'protein':
                 # Protein component
                 comp_setup = 'compact'
-                comp = Protein(name, properties, self.comp_defaults)
+                comp = Protein(name, comp_params)
             elif molecule_type in ['lipid','cooke_lipid']:
                 # Lipid component
                 comp_setup = 'linear'
-                comp = Lipid(name, properties, self.comp_defaults)
+                comp = Lipid(name, comp_params)
             elif molecule_type in ['crowder']:
                 # Crowder component
                 comp_setup = 'compact'
-                comp = Crowder(name, properties, self.comp_defaults)
+                comp = Crowder(name, comp_params)
             elif molecule_type in ['rna']:
                 # Crowder component
                 comp_setup = 'spiral'
-                comp = RNA(name, properties, self.comp_defaults)
+                comp = RNA(name, comp_params)
             elif molecule_type == 'cyclic':
                 comp_setup = 'compact'
-                comp = Cyclic(name, properties, self.comp_defaults)
+                comp = Cyclic(name, comp_params)
             elif molecule_type == 'seastar':
                 comp_setup = 'compact'
-                comp = Seastar(name, properties, self.comp_defaults)
+                comp = Seastar(name, comp_params)
             elif molecule_type == 'ptm_protein':
                 comp_setup = 'compact'
-                comp = PTMProtein(name, properties, self.comp_defaults)
+                comp = PTMProtein(name, comp_params)
             else:
                 raise ValueError(f"Component of type {molecule_type} not found.")
 

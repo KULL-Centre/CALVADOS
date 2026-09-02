@@ -17,6 +17,7 @@ from .sequence import (
     read_fasta,
     seq_from_pdb,
 )
+from .inputmodels import ComponentInput
 
 
 class Component:
@@ -25,18 +26,17 @@ class Component:
     This base class provides shared sequence, property, coordinate, and bond setup.
     """
 
-    def __init__(self, name: str, properties: dict, defaults: dict):
+    def __init__(
+            self,
+            name: str,
+            params: ComponentInput,
+        ):
         """Initialize a component from explicit and default properties."""
         self.name = name
 
         # read component properties
-        for key, val in properties.items():
+        for key, val in params.model_dump().items():
             setattr(self, key, val)
-
-        # read default properties where necessary
-        for key, val in defaults.items():
-            if key not in properties:
-                setattr(self, key, val)
 
         # read residue parameters from file
         try:

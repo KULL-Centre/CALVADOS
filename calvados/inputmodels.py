@@ -1,4 +1,5 @@
-from typing import Literal
+from collections.abc import Mapping
+from typing import Any, Literal
 from pydantic import (
     Field,
     BaseModel,
@@ -137,3 +138,45 @@ class JobInput(BaseModel):
 
     envname: str = 'calvados'
     batch_sys: Literal['SLURM', 'PBS'] = 'SLURM'
+
+
+def validate_inputs(
+    config: Mapping[str, Any] | SimulationInput,
+    components: Mapping[str, Any],
+) -> tuple[SimulationInput, dict[str, ComponentInput]]:
+    """Validate simulation input and resolve every configured component."""
+    config_model = SimulationInput.model_validate(config)
+
+    if not isinstance(components, Mapping):
+        raise TypeError("components input must be a mapping")
+
+    unknown_sections = set(components) - {"defaults", "system"}
+    if unknown_sections:
+        raise ValueError(
+            "Unknown components input sections: "
+            f"{sorted(map(str, unknown_sections))}"
+        )
+
+    defaults = components.get("defaults", {})
+    system = components.get("system", {})
+
+    if not isinstance(defaults, Mapping):
+        raise TypeError("component defaults must be a mapping")
+    if not isinstance(system, Mapping):
+        raise TypeError("component system must be a mapping")
+
+    component_models: dict[str, ComponentInput] = {}
+    for name, overrides in system.items():
+        if not isinstance(name, str):
+            raise TypeError("component names must be strings")
+        if not isinstance(overrides, Mapping):
+            raise TypeError(f"Component {name!r} must be a mapping")
+
+        raw_component = {
+            **defaults,
+            **overrides,
+            "name": name,
+        }
+        component_models[name] = ComponentInput.model_validate(raw_component)
+
+    return config_model, component_models
