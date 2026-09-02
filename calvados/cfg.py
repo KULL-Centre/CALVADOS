@@ -5,35 +5,44 @@ from time import sleep
 
 import yaml
 from jinja2 import Template
+from pydantic import BaseModel, TypeAdapter
+
+from calvados.inputmodels import ComponentInput, JobInput, SimulationInput
+
+
+def model_defaults(model: type[BaseModel]) -> dict:
+    """Return the defaults declared for non-required model fields."""
+    return {
+        name: field.get_default(call_default_factory=True)
+        for name, field in model.model_fields.items()
+        if not field.is_required()
+    }
+
+
+def serialize_fields(model: type[BaseModel], values: dict) -> dict:
+    """Validate and serialize selected model fields."""
+    serialized = {}
+    for name, value in values.items():
+        field = model.model_fields[name]
+        adapter = TypeAdapter(field.rebuild_annotation())
+        validated = adapter.validate_python(value)
+        serialized[name] = adapter.dump_python(validated, mode='json')
+    return serialized
 
 ###########################
 
 class Config:
     def __init__(self,**params):
-        self.params = params
-        self.pkg_base = resources.files('calvados')
-        self.config = self.load_default_config(self.pkg_base)
-        self.load_config()
-
-    def load_config(self):
-        for key, val in self.params.items():
-            self.config[key] = val
+        validated = SimulationInput.model_validate(params)
+        self.config = validated.model_dump(mode='json')
 
     def write(self,path,name='config.yaml',analyses=''):
         """ Write config file. """
         self.name = name
 
         with open(f'{path}/{name}','w') as stream:
-            yaml.dump(self.config,stream)
+            yaml.safe_dump(self.config,stream,sort_keys=False)
         self.write_runfile(path,analyses)
-
-    @staticmethod
-    def load_default_config(pkg_base):
-        """ Load default config. """
-        with open(f'{pkg_base}/data/default_config.yaml','r') as stream:
-            default_config = yaml.safe_load(stream)
-        # default_config['fresidues'] = f'{pkg_base}/data/residues.csv'
-        return default_config
 
     @staticmethod
     def write_runfile(path,analyses):
@@ -61,48 +70,44 @@ if __name__ == "__main__":
 
 class Components:
     def __init__(self,**defaults):
-        self.pkg_base = resources.files('calvados')
-        self.components = {}
-
-        self.components['defaults'] = self.load_default_component(self.pkg_base,defaults)
-        self.components['system'] = {}
+        self.defaults = {**model_defaults(ComponentInput), **defaults}
+        self.components = {
+            'defaults': self.defaults,
+            'system': {},
+        }
 
     def reset_components(self,**kwargs):
         self.components['system'] = {}
 
-    def add(self,**kwargs):
-        nm = kwargs['name']
-        del kwargs['name']
-        self.components['system'][nm] = kwargs
+    def add(self,name,**overrides):
+        raw = {
+            **self.defaults,
+            **overrides,
+            'name': name,
+        }
+        validated = ComponentInput.model_validate(raw)
+        values = validated.model_dump(mode='json')
+        self.components['defaults'] = serialize_fields(
+            ComponentInput, self.defaults
+        )
+        self.components['system'][name] = {
+            key: values[key] for key in overrides
+        }
 
     def write(self,path,name='components.yaml'):
         """ Write component file. """
         self.name = name
         with open(f'{path}/{name}','w') as stream:
-            yaml.dump(self.components,stream,sort_keys=False)
-
-    @staticmethod
-    def load_default_component(pkg_base,defaults):
-        """ Load default config. """
-        # package defaults
-        with open(f'{pkg_base}/data/default_component.yaml','r') as stream:
-            default_component = yaml.safe_load(stream)
-        # manual defaults
-        for key, val in defaults.items():
-            default_component[key] = val
-        return default_component
+            yaml.safe_dump(self.components,stream,sort_keys=False)
 
 ############################
 
 class Job:
     def __init__(self,**kwargs):
-        # package defaults
+        validated = JobInput.model_validate(kwargs)
+        self.settings = validated.model_dump(mode='json')
         self.pkg_base = resources.files('calvados')
-        with open(f'{self.pkg_base}/data/default_job.yaml','r') as stream:
-            self.settings = yaml.safe_load(stream)
         self.settings['folder'] = f'{self.pkg_base}/data/templates'
-        for key, val in kwargs.items():
-            self.settings[key] = val
 
     def write(self,path,config,components,name='job.sh'):
         """ Write PBS or SLURM job. """

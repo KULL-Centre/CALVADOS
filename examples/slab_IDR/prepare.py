@@ -27,7 +27,7 @@ config = Config(
   pH = 7,
   topol = 'slab',
   slab_width = 20,
-  friction = 0.01,
+  friction_coeff = 0.01,
 
   # RUNTIME SETTINGS
   gpu_id = args.gpu_id,
@@ -80,4 +80,3 @@ components = Components(
 components.add(name=args.name, nmol=100)
 
 components.write(path,name='components.yaml')
-

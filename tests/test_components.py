@@ -19,7 +19,7 @@ def _make_component(name: str, molecule_type: str) -> Protein | RNA:
         restraint=False,
     )
     components.add(name=name, molecule_type=molecule_type)
-    config = Config(box=[8, 8, 8], pH=7.0)
+    config = Config(box=[8, 8, 8], temp=293.15, ionic=0.15, pH=7.0)
     simulation = Sim(".", config.config, components.components)
 
     simulation.make_components()

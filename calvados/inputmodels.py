@@ -127,3 +127,13 @@ class SimulationInput(BaseModel):
     fcustom_restraints: InputPath = "custom_restraints.txt"
 
     ref_bead: NonNegativeInt = 0
+
+
+class JobInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template: InputPath = "robust.jinja"
+    fbash: InputPath = Path("~/.bashrc")
+
+    envname: str = 'calvados'
+    batch_sys: Literal['SLURM', 'PBS'] = 'SLURM'

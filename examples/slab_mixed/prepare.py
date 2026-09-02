@@ -39,9 +39,6 @@ config = Config(
   verbose = True,
   slab_eq = True,
   steps_eq = 100*N_save,
-
-  # JOB SETTINGS (ignore if running locally)
-  submit = False
 )
 
 # PATH
@@ -92,4 +89,3 @@ components = Components(
 components.add(name='FUS-RGG3', molecule_type='protein', nmol=200, charge_termini='both')
 components.add(name='polyU40', molecule_type='rna', nmol=60)
 components.write(path,name='components.yaml')
-
