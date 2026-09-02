@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from pydantic import (
     Field,
     BaseModel,
@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     PositiveFloat,
     NonNegativeFloat,
+    model_validator,
 )
 from pathlib import Path
 
@@ -42,8 +43,8 @@ class ComponentInput(BaseModel):
     charge_termini: Literal["none", "N", "C", "both"] = "both"
     alpha: float = 0.0
     kb: PositiveFloat = 8033.0
+    fresidues: InputPath
 
-    fresidues: InputPath | None = None # maybe required?
     ffasta: InputPath | None = None
 
     restraint: bool = False
@@ -77,6 +78,27 @@ class ComponentInput(BaseModel):
     ptm_name: str = "example_ptm"
     ptm_locations: list[PositiveInt] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_component_inputs(self) -> Self:
+        """Check that required component input sources were supplied."""
+        if not self.restraint and self.ffasta is None:
+            raise ValueError("ffasta must be provided when restraint is False")
+
+        if self.molecule_type == "ptm_protein" and self.ffasta is None:
+            raise ValueError("ffasta must be provided for ptm_protein components")
+
+        if self.restraint and self.pdb_folder is None:
+            raise ValueError("pdb_folder must be provided when restraint is True")
+
+        if (
+            self.restraint
+            and self.restraint_type == "harmonic"
+            and self.fdomains is None
+        ):
+            raise ValueError("fdomains must be provided for harmonic restraints")
+
+        return self
+
 
 class SimulationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -94,11 +116,11 @@ class SimulationInput(BaseModel):
     cutoff_lj: NonNegativeFloat = 2.0
     cutoff_yu: NonNegativeFloat = 4.0
 
-    steps: PositiveInt = 100000000
+    steps: PositiveInt | None = None
     wfreq: PositiveInt = 100000
     platform: Literal["CPU","CUDA"] = "CPU"
     threads: PositiveInt = 1
-    runtime: NonNegativeFloat = 0.0
+    runtime: PositiveFloat | None = None
     restart: Literal["checkpoint","pdb","cif"] | None = "checkpoint"
     frestart: InputPath = "restart.chk"
     verbose: bool = False
@@ -108,7 +130,7 @@ class SimulationInput(BaseModel):
     bilayer_eq: bool = False
     pressure_coupling: bool = False
     box_eq: bool = False
-    pressure: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    pressure: tuple[float, float, float] | None = None
     boxscaling_xyz: tuple[bool, bool, bool] = (True, True, True)
     k_eq: NonNegativeFloat = 0.02
     steps_eq: NonNegativeInt = 1000
@@ -116,8 +138,8 @@ class SimulationInput(BaseModel):
     ext_force_expr: str = "step(d2-18)*d2; d2=periodicdistance(x, y, z, 0, 0, z)^2"
 
     friction_coeff: NonNegativeFloat = 0.01 
-    slab_width: NonNegativeFloat = 100.0
-    slab_outer: NonNegativeFloat = 40.0
+    slab_width: PositiveFloat | None = None
+    slab_outer: PositiveFloat | None = None
     random_number_seed: int | None = None
     report_potential_energy: bool = False
     logfreq: PositiveInt = 1000000
@@ -128,6 +150,60 @@ class SimulationInput(BaseModel):
     fcustom_restraints: InputPath = "custom_restraints.txt"
 
     ref_bead: NonNegativeInt = 0
+
+    @model_validator(mode="after")
+    def validate_simulation_duration(self) -> Self:
+        """Require one simulation duration and populate the default step count."""
+        if self.steps is not None and self.runtime is not None:
+            raise ValueError("Provide either steps or runtime, not both")
+
+        if self.steps is None and self.runtime is None:
+            self.steps = 100_000_000
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_pressure_settings(self) -> Self:
+        """Validate pressure-equilibration settings."""
+        if self.box_eq and self.bilayer_eq:
+            raise ValueError("box_eq and bilayer_eq cannot both be enabled")
+
+        if self.box_eq and not any(self.boxscaling_xyz):
+            raise ValueError("box_eq requires at least one scalable box direction")
+
+        pressure_required = self.pressure_coupling or self.bilayer_eq or self.box_eq
+        if pressure_required and self.pressure is None:
+            raise ValueError(
+                "pressure must be provided when pressure_coupling, "
+                "bilayer_eq, or box_eq is enabled"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_slab_geometry(self) -> Self:
+        """Ensure that the configured slab regions fit inside the box."""
+        if self.topol != "slab":
+            return self
+
+        if self.slab_width is None:
+            raise ValueError("slab_width must be provided for slab simulations")
+
+        box_z = self.box[2]
+        if self.slab_width >= box_z:
+            raise ValueError("slab_width must be smaller than the box length in z")
+
+        if self.slab_outer is not None:
+            if self.slab_outer >= box_z / 2:
+                raise ValueError(
+                    "slab_outer must be smaller than half the box length in z"
+                )
+            if self.slab_outer < self.slab_width / 2:
+                raise ValueError(
+                    "slab_outer must be greater than or equal to slab_width / 2"
+                )
+
+        return self
 
 
 class JobInput(BaseModel):
@@ -178,5 +254,15 @@ def validate_inputs(
             "name": name,
         }
         component_models[name] = ComponentInput.model_validate(raw_component)
+
+    has_crowders = any(
+        component.molecule_type == "crowder"
+        for component in component_models.values()
+    )
+    if config_model.topol == "slab" and has_crowders:
+        if config_model.slab_outer is None:
+            raise ValueError(
+                "slab_outer must be provided for slab systems containing crowders"
+            )
 
     return config_model, component_models

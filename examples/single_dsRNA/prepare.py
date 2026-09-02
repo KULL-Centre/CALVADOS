@@ -36,7 +36,6 @@ config = Config(
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
-  runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CPU', # or CUDA
   gpu_id = 0,
   threads = 1,
@@ -95,5 +94,4 @@ components.add(name='dspolyR12',molecule_type='rna', nmol=1, restraint=True,
                use_com = False, ext_restraint=True)
 
 components.write(path,name='components.yaml')
-
 

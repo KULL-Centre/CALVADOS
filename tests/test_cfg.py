@@ -31,7 +31,11 @@ def test_config_rejects_unknown_fields() -> None:
 
 
 def test_components_validate_add_and_preserve_yaml_shape(tmp_path: Path) -> None:
-    components = Components(fresidues=Path("residues.csv"), nmol=1)
+    components = Components(
+        fresidues=Path("residues.csv"),
+        ffasta=Path("sequences.fasta"),
+        nmol=1,
+    )
     components.add(name="A", nmol=2)
 
     with pytest.raises(ValidationError):
@@ -55,7 +59,10 @@ def test_job_uses_model_defaults_and_renders_template(tmp_path: Path) -> None:
     assert job.settings["folder"].endswith("calvados/data/templates")
 
     config = Config(box=[8, 8, 8], temp=293.15, ionic=0.15, pH=7.0)
-    components = Components(fresidues="residues.csv")
+    components = Components(
+        fresidues="residues.csv",
+        ffasta="sequences.fasta",
+    )
     components.add(name="A")
     config.write(tmp_path)
     components.write(tmp_path)
@@ -86,6 +93,7 @@ def test_validate_inputs_resolves_component_defaults_and_overrides() -> None:
         components={
             "defaults": {
                 "fresidues": "residues.csv",
+                "ffasta": "sequences.fasta",
                 "nmol": 1,
             },
             "system": {
@@ -121,3 +129,181 @@ def test_validate_inputs_rejects_malformed_component_sections() -> None:
 
     with pytest.raises(TypeError, match="component system must be a mapping"):
         validate_inputs(config, {"defaults": {}, "system": []})
+
+
+@pytest.mark.parametrize(
+    ("component", "message"),
+    [
+        (
+            {"name": "A", "fresidues": "residues.csv"},
+            "ffasta must be provided when restraint is False",
+        ),
+        (
+            {
+                "name": "A",
+                "fresidues": "residues.csv",
+                "restraint": True,
+                "fdomains": "domains.yaml",
+            },
+            "pdb_folder must be provided when restraint is True",
+        ),
+        (
+            {
+                "name": "A",
+                "fresidues": "residues.csv",
+                "restraint": True,
+                "pdb_folder": "pdbs",
+            },
+            "fdomains must be provided for harmonic restraints",
+        ),
+        (
+            {
+                "name": "A",
+                "molecule_type": "ptm_protein",
+                "fresidues": "residues.csv",
+                "restraint": True,
+                "restraint_type": "go",
+                "pdb_folder": "pdbs",
+            },
+            "ffasta must be provided for ptm_protein components",
+        ),
+    ],
+)
+def test_component_input_requires_compatible_input_sources(
+    component: dict,
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ComponentInput.model_validate(component)
+
+
+def test_component_input_accepts_complete_restrained_inputs() -> None:
+    harmonic = ComponentInput(
+        name="harmonic",
+        fresidues="residues.csv",
+        restraint=True,
+        pdb_folder="pdbs",
+        fdomains="domains.yaml",
+    )
+    go = ComponentInput(
+        name="go",
+        fresidues="residues.csv",
+        restraint=True,
+        restraint_type="go",
+        pdb_folder="pdbs",
+    )
+
+    assert harmonic.restraint_type == "harmonic"
+    assert go.restraint_type == "go"
+
+
+def simulation_input(**overrides) -> dict:
+    values = {
+        "box": [20, 20, 100],
+        "temp": 293.15,
+        "ionic": 0.15,
+        "pH": 7.0,
+    }
+    values.update(overrides)
+    return values
+
+
+def test_simulation_input_resolves_one_duration() -> None:
+    default = SimulationInput.model_validate(simulation_input())
+    clock_limited = SimulationInput.model_validate(
+        simulation_input(runtime=12)
+    )
+
+    assert default.steps == 100_000_000
+    assert default.runtime is None
+    assert clock_limited.steps is None
+    assert clock_limited.runtime == 12
+
+    with pytest.raises(
+        ValidationError,
+        match="Provide either steps or runtime, not both",
+    ):
+        SimulationInput.model_validate(simulation_input(steps=1000, runtime=12))
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [
+        {"pressure_coupling": True},
+        {"bilayer_eq": True},
+        {"box_eq": True},
+    ],
+)
+def test_simulation_input_requires_pressure(setting: dict) -> None:
+    with pytest.raises(ValidationError, match="pressure must be provided"):
+        SimulationInput.model_validate(simulation_input(**setting))
+
+
+def test_simulation_input_validates_box_equilibration() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="box_eq and bilayer_eq cannot both be enabled",
+    ):
+        SimulationInput.model_validate(
+            simulation_input(
+                box_eq=True,
+                bilayer_eq=True,
+                pressure=(1, 1, 1),
+            )
+        )
+
+    with pytest.raises(
+        ValidationError,
+        match="box_eq requires at least one scalable box direction",
+    ):
+        SimulationInput.model_validate(
+            simulation_input(
+                box_eq=True,
+                pressure=(1, 1, 1),
+                boxscaling_xyz=(False, False, False),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("geometry", "message"),
+    [
+        ({}, "slab_width must be provided"),
+        ({"slab_width": 100}, "slab_width must be smaller"),
+        (
+            {"slab_width": 20, "slab_outer": 50},
+            "slab_outer must be smaller than half",
+        ),
+        (
+            {"slab_width": 20, "slab_outer": 9},
+            "slab_outer must be greater than or equal",
+        ),
+    ],
+)
+def test_simulation_input_validates_slab_geometry(
+    geometry: dict,
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        SimulationInput.model_validate(
+            simulation_input(topol="slab", **geometry)
+        )
+
+
+def test_validate_inputs_requires_slab_outer_for_crowders() -> None:
+    with pytest.raises(
+        ValueError,
+        match="slab_outer must be provided for slab systems containing crowders",
+    ):
+        validate_inputs(
+            simulation_input(topol="slab", slab_width=20),
+            {
+                "defaults": {
+                    "fresidues": "residues.csv",
+                    "ffasta": "sequences.fasta",
+                },
+                "system": {
+                    "crowder": {"molecule_type": "crowder"},
+                },
+            },
+        )

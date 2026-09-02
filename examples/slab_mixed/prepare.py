@@ -28,11 +28,11 @@ config = Config(
   ionic = 0.15, # molar
   pH = 7.5,
   topol = 'slab',
+  slab_width = 20,
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
-  runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CUDA',
   restart = 'checkpoint',
   frestart = 'restart.chk',

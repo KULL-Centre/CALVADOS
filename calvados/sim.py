@@ -647,7 +647,7 @@ class Sim:
                 step=True,speed=True,elapsedTime=True,potentialEnergy=self.report_potential_energy,separator='\t',append=append))
 
         print("STARTING SIMULATION", flush=True)
-        if self.runtime > 0: # in hours
+        if self.runtime is not None: # in hours
             simulation.runForClockTime(self.runtime*unit.hour, checkpointFile=fcheck_out, checkpointInterval=30*unit.minute)
         else:
             nbatches = 10
