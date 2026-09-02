@@ -181,6 +181,14 @@ class SimulationInput(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_external_force_settings(self) -> Self:
+        """Prevent incompatible external restraint forces."""
+        if self.slab_eq and self.ext_force:
+            raise ValueError("slab_eq and ext_force cannot both be enabled")
+
+        return self
+
+    @model_validator(mode="after")
     def validate_slab_geometry(self) -> Self:
         """Ensure that the configured slab regions fit inside the box."""
         if self.topol != "slab":
@@ -259,6 +267,15 @@ def validate_inputs(
         component.molecule_type == "crowder"
         for component in component_models.values()
     )
+
+    molecule_types = {
+        component.molecule_type for component in component_models.values()
+    }
+    if {"lipid", "cooke_lipid"}.issubset(molecule_types):
+        raise ValueError(
+            "lipid and cooke_lipid components cannot both be present"
+        )
+
     if config_model.topol == "slab" and has_crowders:
         if config_model.slab_outer is None:
             raise ValueError(

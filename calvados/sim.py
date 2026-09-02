@@ -15,6 +15,13 @@ from .components import *
 from .inputmodels import validate_inputs
 
 
+def _split_steps(steps: int, max_batches: int = 10) -> list[int]:
+    """Split simulation steps into at most ``max_batches`` nonempty batches."""
+    nbatches = min(max_batches, steps)
+    batch, remainder = divmod(steps, nbatches)
+    return [batch + (index < remainder) for index in range(nbatches)]
+
+
 class Sim:
     def __init__(self,path,config,components):
         """
@@ -33,6 +40,7 @@ class Sim:
         if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
             self.slab_eq = False
             self.bilayer_eq = False
+            self.box_eq = False
 
         if self.slab_eq:
             self.rcent = interactions.init_slab_restraints(self.box,self.k_eq,self.slab_eq_axis)
@@ -151,7 +159,9 @@ class Sim:
             )
         if self.ncookelipids > 0:
             if self.nlipids > 0:
-                raise
+                raise ValueError(
+                    "lipid and cooke_lipid components cannot both be present"
+                )
             self.cos, self.cn = interactions.init_lipid_interactions(
             self.eps_lj,self.eps_yu,self.cutoff_yu,factor=3.0
             )
@@ -333,14 +343,22 @@ class Sim:
         """
         #print('bilayergrid.shape',self.bilayergrid.shape)
         inserted = False
-        while not inserted:
+        attempts = 0
+        while not inserted and attempts < ntries and self.bilayergrid.size > 0:
+            attempts += 1
             xs_others = np.array(self.pos, dtype=float)
             xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, xs_others, comp.xinit)
             if not inserted:
                 xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, xs_others, comp.xinit, upward=False)
+            if not inserted:
                 idx = np.random.randint(self.bilayergrid.shape[0])
                 self.bilayergrid[0] = self.bilayergrid[idx]
                 self.bilayergrid = np.delete(self.bilayergrid,idx,axis=0)
+        if not inserted:
+            raise ValueError(
+                f"Could not place bilayer component {comp.name!r} after "
+                f"{attempts} attempts."
+            )
         for x in xs:
             self.pos.append(x)
             self.nparticles += 1
@@ -474,20 +492,34 @@ class Sim:
     def map_custom_restraints(self):
         """ Map input format for custom restraints to absolute bead number """
         custom_restr = self.parse_custom_restraints(self.fcustom_restraints)
-        total_beads = [0]
-        for idx, comp in enumerate(self.components):
-            comp.start_bead = total_beads[-1]
-            total_beads.append(int(comp.nmol * comp.nbeads))
+        total_beads = 0
+        for comp in self.components:
+            comp.start_bead = int(total_beads)
+            total_beads += comp.nmol * comp.nbeads
         self.custom_restr_abs = []
+        components_by_name = {comp.name: comp for comp in self.components}
         for i,j,r,k in custom_restr:
             print(i,j,r,k)
             crestr = []
-            for idx, x in enumerate([i,j]):
+            # convert beads i, j to absolute bead ids in simulation
+            for x in [i,j]:
                 name, copy, bead = x[0], x[1], x[2] # 1-based
-                for idx, comp in enumerate(self.components):
-                    if comp.name == name:
-                        x_abs = comp.start_bead + (copy-1)*comp.nbeads + (bead-1)
-                        break
+                if name not in components_by_name:
+                    raise ValueError(
+                        f"Custom restraint component {name!r} is not in the system."
+                    )
+                comp = components_by_name[name]
+                if not 1 <= copy <= comp.nmol:
+                    raise ValueError(
+                        f"Custom restraint copy {copy} is outside the valid range "
+                        f"1-{comp.nmol} for component {name!r}."
+                    )
+                if not 1 <= bead <= comp.nbeads:
+                    raise ValueError(
+                        f"Custom restraint bead {bead} is outside the valid range "
+                        f"1-{comp.nbeads} for component {name!r}."
+                    )
+                x_abs = comp.start_bead + (copy-1)*comp.nbeads + (bead-1)
                 crestr.append(x_abs)
             crestr.append(float(r))
             crestr.append(float(k))
@@ -529,11 +561,6 @@ class Sim:
                 pdb = app.pdbxfile.PDBxFile(fcheck_in)
             else:
                 pdb = app.pdbxfile.PDBxFile(self.cif_cg)
-        elif self.restart == 'checkpoint':
-            if os.path.isfile(fcheck_in):
-                pdb = app.pdbxfile.PDBxFile(fcheck_in)
-            else:
-                pdb = app.pdbxfile.PDBxFile(self.cif_cg)
         else:
             pdb = app.pdbxfile.PDBxFile(self.cif_cg)
 
@@ -568,8 +595,6 @@ class Sim:
                 print(f'No checkpoint file {self.frestart} found: Starting from new system configuration')
             elif self.restart is None:
                 print('Starting from new system configuration')
-            else:
-                raise
 
             if os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'): # backup old dcd if not restarting from checkpoint
                 now = datetime.now()
@@ -598,6 +623,8 @@ class Sim:
                     self.system.removeForce(index)
                     break
             integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            if self.random_number_seed is not None:
+                integrator.setRandomNumberSeed(self.random_number_seed)
             if self.platform == 'CPU':
                 simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
             else:
@@ -634,6 +661,8 @@ class Sim:
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
             integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            if self.random_number_seed is not None:
+                integrator.setRandomNumberSeed(self.random_number_seed)
             if self.platform == 'CPU':
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
             else:
@@ -650,11 +679,10 @@ class Sim:
         if self.runtime is not None: # in hours
             simulation.runForClockTime(self.runtime*unit.hour, checkpointFile=fcheck_out, checkpointInterval=30*unit.minute)
         else:
-            nbatches = 10
-            batch = int(self.steps / nbatches)
-            for i in tqdm(range(nbatches),mininterval=1):
+            for batch in tqdm(_split_steps(self.steps), mininterval=1):
                 simulation.step(batch)
                 simulation.saveCheckpoint(fcheck_out)
+
         simulation.saveCheckpoint(fcheck_out)
 
         now = datetime.now()

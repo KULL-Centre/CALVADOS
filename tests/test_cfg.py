@@ -265,6 +265,16 @@ def test_simulation_input_validates_box_equilibration() -> None:
         )
 
 
+def test_simulation_input_rejects_slab_and_external_forces() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="slab_eq and ext_force cannot both be enabled",
+    ):
+        SimulationInput.model_validate(
+            simulation_input(slab_eq=True, ext_force=True)
+        )
+
+
 @pytest.mark.parametrize(
     ("geometry", "message"),
     [
@@ -304,6 +314,26 @@ def test_validate_inputs_requires_slab_outer_for_crowders() -> None:
                 },
                 "system": {
                     "crowder": {"molecule_type": "crowder"},
+                },
+            },
+        )
+
+
+def test_validate_inputs_rejects_mixed_lipid_models() -> None:
+    with pytest.raises(
+        ValueError,
+        match="lipid and cooke_lipid components cannot both be present",
+    ):
+        validate_inputs(
+            simulation_input(),
+            {
+                "defaults": {
+                    "fresidues": "residues.csv",
+                    "ffasta": "sequences.fasta",
+                },
+                "system": {
+                    "lipid": {"molecule_type": "lipid"},
+                    "cooke": {"molecule_type": "cooke_lipid"},
                 },
             },
         )

@@ -1,5 +1,7 @@
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import openmm
 import pytest
 
@@ -7,6 +9,71 @@ from calvados import sim
 from calvados.cfg import Components, Config
 
 TEST_DATA = Path(__file__).parent / "data"
+
+
+def test_maps_custom_restraints_across_multiple_components() -> None:
+    simulation = sim.Sim.__new__(sim.Sim)
+    simulation.components = [
+        SimpleNamespace(name="A", nmol=2, nbeads=3),
+        SimpleNamespace(name="B", nmol=1, nbeads=4),
+        SimpleNamespace(name="C", nmol=2, nbeads=5),
+    ]
+    simulation.fcustom_restraints = "unused.txt"
+    simulation.parse_custom_restraints = lambda _: [
+        [["B", 1, 4], ["C", 2, 1], "1.0", "700.0"]
+    ]
+
+    simulation.map_custom_restraints()
+
+    assert [component.start_bead for component in simulation.components] == [0, 6, 10]
+    assert simulation.custom_restr_abs == [[9, 15, 1.0, 700.0]]
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "message"),
+    [
+        (["missing", 1, 1], "component 'missing' is not in the system"),
+        (["A", 3, 1], "copy 3 is outside the valid range 1-2"),
+        (["A", 1, 4], "bead 4 is outside the valid range 1-3"),
+        (["A", 0, 1], "copy 0 is outside the valid range 1-2"),
+        (["A", 1, 0], "bead 0 is outside the valid range 1-3"),
+    ],
+)
+def test_rejects_invalid_custom_restraint_endpoint(
+    endpoint: list,
+    message: str,
+) -> None:
+    simulation = sim.Sim.__new__(sim.Sim)
+    simulation.components = [SimpleNamespace(name="A", nmol=2, nbeads=3)]
+    simulation.fcustom_restraints = "unused.txt"
+    simulation.parse_custom_restraints = lambda _: [
+        [endpoint, ["A", 1, 1], "1.0", "700.0"]
+    ]
+
+    with pytest.raises(ValueError, match=message):
+        simulation.map_custom_restraints()
+
+
+def test_bilayer_placement_stops_after_ntries(monkeypatch: pytest.MonkeyPatch) -> None:
+    simulation = sim.Sim.__new__(sim.Sim)
+    simulation.bilayergrid = np.zeros((3, 3))
+    simulation.box = np.ones(3)
+    simulation.pos = []
+    simulation.nparticles = 0
+    component = SimpleNamespace(name="lipid", xinit=np.zeros((2, 3)))
+
+    monkeypatch.setattr(
+        sim.build,
+        "build_xybilayer",
+        lambda *args, **kwargs: (np.zeros((2, 3)), False),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Could not place bilayer component 'lipid' after 2 attempts",
+    ):
+        simulation.place_bilayer(component, ntries=2)
+
 
 def bond_check(i: int, j: int):
     """ Define bonded term conditions. """
