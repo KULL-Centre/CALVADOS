@@ -111,7 +111,7 @@ class SimulationInput(BaseModel):
     sysname: str = "default_simulation"
     topol: TopolType = "center"
 
-    fixed_lambda: int = 0
+    fixed_lambda: NonNegativeFloat = 0.0
     eps_lj: NonNegativeFloat = 0.2
     cutoff_lj: NonNegativeFloat = 2.0
     cutoff_yu: NonNegativeFloat = 4.0
