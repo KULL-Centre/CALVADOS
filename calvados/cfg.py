@@ -4,6 +4,7 @@ import os
 from time import sleep
 
 from importlib import resources
+from textwrap import dedent, indent
 
 import yaml
 import json
@@ -47,6 +48,7 @@ if __name__ == "__main__":
     parser.add_argument('--path',nargs='?', default='.', const='.', type=str)
     parser.add_argument('--config',nargs='?', default='config.yaml', const='config.yaml', type=str)
     parser.add_argument('--components',nargs='?', default='components.yaml', const='components.yaml', type=str)
+    parser.add_argument('--skip-analysis', action='store_true', help='run the simulation without the appended analysis')
 
     args = parser.parse_args()
 
@@ -56,8 +58,15 @@ if __name__ == "__main__":
 
     sim.run(path=path,fconfig=fconfig,fcomponents=fcomponents)
 """
+        analysis_stream = ''
+        if analyses and analyses.strip():
+            analysis_stream = (
+                '\n    if not args.skip_analysis:\n'
+                + indent(dedent(analyses).strip(), '        ')
+                + '\n'
+            )
         with open(f'{path}/run.py','w') as f:
-            f.write(stream+analyses)
+            f.write(stream+analysis_stream)
 
 ###########################
 
