@@ -1,18 +1,20 @@
 import os
 from datetime import datetime
+from pathlib import Path
 
 import mdtraj as md
 import numpy as np
 import openmm
 from Bio.SeqUtils import seq3
+from numpy.typing import NDArray
 from openmm import app, unit
 from tqdm import tqdm
 from yaml import safe_load
 
 from calvados import build, interactions
 
-from .components import Component, COMPONENT_REGISTRY
-from .inputmodels import validate_inputs
+from .components import COMPONENT_REGISTRY, Component
+from .inputmodels import SimulationInput, validate_inputs
 
 
 def _split_steps(steps: int, max_batches: int = 10) -> list[int]:
@@ -28,25 +30,40 @@ class Sim:
         simulate openMM Calvados;
         parameters are provided by config dictionary """
 
-        self.path = path
-        self.config_model, self.comp_dict = validate_inputs(config, components)
+        self.path = Path(path)
+        self.config: SimulationInput
+        self.config, self.comp_dict = validate_inputs(config, components)
 
-        for key, val in self.config_model.model_dump(mode="python").items():
-            setattr(self, key, val)
+        # Config options that can change within sim are stored as copied to attributes
+        self.box: NDArray[np.float64] = np.array(self.config.box, dtype=float)
+        self.eps_lj: float = float(self.config.eps_lj) * 4.184 # kcal to kJ/mol
+        self.slab_eq = self.config.slab_eq
+        self.bilayer_eq = self.config.bilayer_eq
+        self.box_eq = self.config.box_eq
+        self.restart_path = Path(self.config.frestart)
 
-        self.box = np.array(self.box, dtype=float)
-        self.eps_lj *= 4.184 # kcal to kJ/mol
+        if not self.restart_path.is_absolute():
+            self.restart_path = self.path / self.restart_path
 
-        if self.restart == 'checkpoint' and os.path.isfile(f'{self.path}/{self.frestart}'):
+        if self.config.restart in ["pdb", "cif"] and not self.restart_path.is_file():
+            raise FileNotFoundError(
+                f"{self.config.restart} restart file not found: {self.restart_path}"
+            )
+
+        if self.config.restart == 'checkpoint' and self.restart_path.is_file():
             self.slab_eq = False
             self.bilayer_eq = False
             self.box_eq = False
 
         if self.slab_eq:
-            self.rcent = interactions.init_slab_restraints(self.box,self.k_eq,self.slab_eq_axis)
+            self.rcent = interactions.init_slab_restraints(
+                self.box,
+                self.config.k_eq,
+                self.config.slab_eq_axis
+            )
 
-        if self.ext_force:
-            self.rcent = openmm.CustomExternalForce(self.ext_force_expr)
+        if self.config.ext_force:
+            self.rcent = openmm.CustomExternalForce(self.config.ext_force_expr)
 
     def make_components(self):
         self.components = np.empty(0)
@@ -54,37 +71,9 @@ class Sim:
 
         for name, comp_params in self.comp_dict.items():
             component_class = COMPONENT_REGISTRY[comp_params.molecule_type]
-            comp = component_class(name, comp_params)
+            comp: Component = component_class(name, comp_params)
 
-            # if molecule_type == 'protein':
-            #     # Protein component
-            
-            #     comp = Protein(name, comp_params)
-            # elif molecule_type in ['lipid','cooke_lipid']:
-            #     # Lipid component
-            #     comp = Lipid(name, comp_params)
-            # elif molecule_type in ['crowder']:
-            #     # Crowder component
-            #     comp_setup = 'compact'
-            #     comp = Crowder(name, comp_params)
-            # elif molecule_type in ['rna']:
-            #     # Crowder component
-            #     comp_setup = 'spiral'
-            #     comp = RNA(name, comp_params)
-            # elif molecule_type == 'cyclic':
-            #     comp_setup = 'compact'
-            #     comp = Cyclic(name, comp_params)
-            # elif molecule_type == 'seastar':
-            #     comp_setup = 'compact'
-            #     comp = Seastar(name, comp_params)
-            # elif molecule_type == 'ptm_protein':
-            #     comp_setup = 'compact'
-            #     comp = PTMProtein(name, comp_params)
-            # else:
-            #     raise ValueError(f"Component of type {comp_params.molecule_type} not found.")
-
-            comp.eps_lj = self.eps_lj
-            comp.calc_properties(pH=self.pH, verbose=self.verbose)
+            comp.calc_properties(pH=self.pH, verbose=self.verbose, eps_lj = self.eps_lj)
             if comp.restraint:
                 if comp.restraint_type == 'go':
                     comp.init_restraint_force(
@@ -137,7 +126,7 @@ class Sim:
 
 
         # init interaction parameters (required before make components)
-        self.eps_yu, self.k_yu = interactions.genParamsDH(self.temp,self.ionic)
+        self.eps_yu, self.k_yu = interactions.genParamsDH(self.config.temp,self.config.ionic)
 
         # make components
         self.make_components()
@@ -234,19 +223,20 @@ class Sim:
                 self.add_interactions(comp)
 
                 # add restraints towards box center
-                if (self.slab_eq or self.ext_force) and comp.ext_restraint:
+                if (self.slab_eq or self.config.ext_force) and comp.params.ext_restraint:
                     self.add_ext_restraints(comp)
 
         if self.custom_restraints:
             self.map_custom_restraints()
             self.add_custom_restraints()
 
+        trajectory = md.Trajectory(self.pos, self.top, 0, self.box, [90,90,90])
+
         self.pdb_cg = f'{self.path}/top.pdb'
         self.cif_cg = f'{self.path}/top.cif'
-        a = md.Trajectory(self.pos, self.top, 0, self.box, [90,90,90])
-        if self.restart != 'pdb': # only save new topology if no system pdb is given
-            a.save_pdb(self.pdb_cg)
-            a.save_cif(self.cif_cg)
+        if self.config.restart not in ["pdb", "cif"]: # restart checkpoint or None
+            trajectory.save_pdb(self.pdb_cg)
+            trajectory.save_cif(self.cif_cg)
 
         self.add_forces_to_system()
         self.print_system_summary()
@@ -271,7 +261,7 @@ class Sim:
                 print(f'Number of restraints for comp {comp.name}: {comp.cs.getNumBonds()}')
 
         # External force
-        if self.ext_force:
+        if self.config.ext_force:
             self.system.addForce(self.rcent)
 
         # Equilibration forces
@@ -287,14 +277,14 @@ class Sim:
         if self.box_eq:
             barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
                     [self.pressure[0]*unit.bar,self.pressure[1]*unit.bar,self.pressure[2]*unit.bar],
-                    self.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
+                    self.config.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
                     self.boxscaling_xyz[2],1000)
             self.system.addForce(barostat)
 
         # Bilayer eq. force
         if self.bilayer_eq:
             barostat = openmm.openmm.MonteCarloMembraneBarostat(self.pressure[0]*unit.bar,
-                    0*unit.bar*unit.nanometer, self.temp*unit.kelvin,
+                    0*unit.bar*unit.nanometer, self.config.temp*unit.kelvin,
                     openmm.openmm.MonteCarloMembraneBarostat.XYIsotropic,
                     openmm.openmm.MonteCarloMembraneBarostat.ZFixed, 10000)
             self.system.addForce(barostat)
@@ -311,7 +301,7 @@ class Sim:
         print(f'ah: {self.ah.getNumParticles()} particles, {self.ah.getNumExclusions()} exclusions')
         print(f'yu: {self.yu.getNumParticles()} particles, {self.yu.getNumExclusions()} exclusions')
         if self.slab_eq:
-            print(f'Equilibration restraints (rcent) towards box center in {self.slab_eq_axis} direction')
+            print(f'Equilibration restraints (rcent) towards box center in {self.config.slab_eq_axis} direction')
             print(f'rcent: {self.rcent.getNumParticles()} restraints')
         if self.bilayer_eq:
             print(f'Equilibration under zero lateral tension')
@@ -557,53 +547,50 @@ class Sim:
     def simulate(self):
         """ Simulate. """
 
-        fcheck_in = f'{self.path}/{self.frestart}'
         fcheck_out = f'{self.path}/restart.chk'
         append = False
 
-        if self.restart == 'pdb':
-            if os.path.isfile(fcheck_in):
-                pdb = app.pdbfile.PDBFile(fcheck_in)
-            else:
-                pdb = app.pdbfile.PDBFile(self.pdb_cg)
-        elif self.restart == 'cif':
-            if os.path.isfile(fcheck_in):
-                pdb = app.pdbxfile.PDBxFile(fcheck_in)
-            else:
-                pdb = app.pdbxfile.PDBxFile(self.cif_cg)
+        if self.config.restart == "pdb":
+            pdb = app.PDBFile(str(self.restart_path))
+        elif self.config.restart == "cif":
+            pdb = app.PDBxFile(str(self.restart_path))
         else:
-            pdb = app.pdbxfile.PDBxFile(self.cif_cg)
+            pdb = app.PDBxFile(self.cif_cg)
 
         # use langevin integrator
-        integrator = openmm.openmm.LangevinMiddleIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
-        if self.random_number_seed is not None:
-            integrator.setRandomNumberSeed(self.random_number_seed)
+        integrator = openmm.openmm.LangevinMiddleIntegrator(
+            self.config.temp*unit.kelvin,
+            self.config.friction_coeff/unit.picosecond,
+            0.01*unit.picosecond
+        )
+        if self.config.random_number_seed is not None:
+            integrator.setRandomNumberSeed(self.config.random_number_seed)
         print(integrator.getFriction(),integrator.getTemperature())
 
         # assemble simulation
-        platform = openmm.Platform.getPlatformByName(self.platform)
-        if self.platform == 'CPU':
-            simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
+        platform = openmm.Platform.getPlatformByName(self.config.platform)
+        if self.config.platform == 'CPU':
+            simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.config.threads)))
         else:
             if os.environ.get('CUDA_VISIBLE_DEVICES') is None:
                 platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
             simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
         print('Running on', platform.getName())
 
-        if (os.path.isfile(fcheck_in)) and (self.restart == 'checkpoint'):
+        if (self.restart_path.is_file()) and (self.config.restart == 'checkpoint'):
             if not os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'):
                 raise Exception(f'Did not find {self.path}/{self.sysname:s}.dcd trajectory to append to!')
             append = True
-            print(f'Reading check point file {fcheck_in}')
+            print(f'Reading checkpoint file {self.restart_path}')
             print(f'Appending trajectory to {self.path}/{self.sysname:s}.dcd')
             print(f'Appending log file to {self.path}/{self.sysname:s}.log')
-            simulation.loadCheckpoint(fcheck_in)
+            simulation.loadCheckpoint(self.restart_path)
         else:
-            if self.restart in ['pdb','cif']:
-                print(f'Reading in system configuration {self.frestart}')
-            elif self.restart == 'checkpoint':
-                print(f'No checkpoint file {self.frestart} found: Starting from new system configuration')
-            elif self.restart is None:
+            if self.config.restart in ['pdb','cif']:
+                print(f'Reading in system configuration {self.restart_path}')
+            elif self.config.restart == 'checkpoint':
+                print(f'No checkpoint file {self.restart_path} found: Starting from new system configuration')
+            elif self.config.restart is None:
                 print('Starting from new system configuration')
 
             if os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'): # backup old dcd if not restarting from checkpoint
@@ -613,13 +600,13 @@ class Sim:
                 os.system(f'mv {self.path}/{self.sysname:s}.dcd {self.path}/backup_{self.sysname:s}_{dt_string}.dcd')
             print(f'Writing trajectory to new file {self.path}/{self.sysname:s}.dcd')
             simulation.context.setPositions(pdb.positions)
-            print(f'Minimizing energy.')
+            print('Minimizing energy.')
             simulation.minimizeEnergy()
 
         if self.slab_eq:
-            print(f"Starting slab equilibration with k_eq == {self.k_eq:.4f} kJ/(mol*nm) for {self.steps_eq} steps", flush=True)
+            print(f"Starting slab equilibration with k_eq == {self.config.k_eq:.4f} kJ/(mol*nm) for {self.config.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
-            simulation.step(self.steps_eq)
+            simulation.step(self.config.steps_eq)
             state_final = simulation.context.getState(getPositions=True)
             with open(f'{self.path}/equilibration_final.pdb', 'w') as f:
                 app.PDBFile.writeFile(simulation.topology, state_final.getPositions(), f)
@@ -632,11 +619,11 @@ class Sim:
                     print(f'Removing external force {index}')
                     self.system.removeForce(index)
                     break
-            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
-            if self.random_number_seed is not None:
-                integrator.setRandomNumberSeed(self.random_number_seed)
-            if self.platform == 'CPU':
-                simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
+            integrator = openmm.openmm.LangevinIntegrator(self.config.temp*unit.kelvin,self.config.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            if self.config.random_number_seed is not None:
+                integrator.setRandomNumberSeed(self.config.random_number_seed)
+            if self.config.platform == 'CPU':
+                simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.config.threads)))
             else:
                 simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
             simulation.context.setPositions(pdb.positions)
@@ -644,9 +631,9 @@ class Sim:
             simulation.minimizeEnergy()
 
         if self.box_eq or self.bilayer_eq:
-            print(f"Starting pressure equilibration for {self.steps_eq} steps", flush=True)
+            print(f"Starting pressure equilibration for {self.config.steps_eq} steps", flush=True)
             simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
-            simulation.step(self.steps_eq)
+            simulation.step(self.config.steps_eq)
             state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
             with open(f'{self.path}/equilibration_final.pdb', 'w') as f:
                 app.PDBFile.writeFile(simulation.topology, state_final.getPositions(), f)
@@ -658,7 +645,7 @@ class Sim:
             topology.setPeriodicBoxVectors(state_final.getPeriodicBoxVectors())
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            if not self.pressure_coupling:
+            if not self.config.pressure_coupling:
                 for index, force in enumerate(self.system.getForces()):
                     if isinstance(force, openmm.openmm.MonteCarloMembraneBarostat):
                         print(f'Removing barostat {index}')
@@ -670,11 +657,11 @@ class Sim:
                         break
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            integrator = openmm.openmm.LangevinIntegrator(self.temp*unit.kelvin,self.friction_coeff/unit.picosecond,0.01*unit.picosecond)
-            if self.random_number_seed is not None:
-                integrator.setRandomNumberSeed(self.random_number_seed)
-            if self.platform == 'CPU':
-                simulation = app.simulation.Simulation(topology, self.system, integrator, platform, dict(Threads=str(self.threads)))
+            integrator = openmm.openmm.LangevinIntegrator(self.config.temp*unit.kelvin,self.config.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            if self.config.random_number_seed is not None:
+                integrator.setRandomNumberSeed(self.config.random_number_seed)
+            if self.config.platform == 'CPU':
+                simulation = app.simulation.Simulation(topology, self.system, integrator, platform, dict(Threads=str(self.config.threads)))
             else:
                 simulation = app.simulation.Simulation(topology, self.system, integrator, platform)
             simulation.context.setPositions(state_final.getPositions())

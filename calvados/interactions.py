@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 import numpy as np
+from numpy.typing import NDArray
 from openmm import openmm, unit
 
 RestType = Literal['harmonic', 'go']
@@ -205,7 +206,7 @@ def init_scaled_YU(
     return scYU
 
 def init_slab_restraints(
-        box: Sequence[float],
+        box: NDArray[np.float64],
         k: float,
         axis: Sequence[bool] = (False, False, True),
 ) -> openmm.CustomExternalForce:

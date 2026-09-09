@@ -22,10 +22,10 @@ from scipy.integrate import quad
 
 FloatArray: TypeAlias = NDArray[np.float64]
 PairMap: TypeAlias = Mapping[tuple[str, str], float]
-
+InputPath: TypeAlias = PathLike | str
 
 ### SEQUENCE INPUT / OUTPUT
-def read_fasta(ffasta: str | PathLike[str]) -> dict[str, SeqRecord]:
+def read_fasta(ffasta: InputPath) -> dict[str, SeqRecord]:
     """Read a FASTA file into a dictionary keyed by record ID."""
     return SeqIO.to_dict(SeqIO.parse(ffasta, "fasta"))
 
@@ -68,7 +68,7 @@ def seq_from_pdb(
     return fastapdb, n_termini, c_termini
 
 
-def write_fasta(new_records: Iterable[SeqRecord], fout: str | PathLike[str]) -> None:
+def write_fasta(new_records: Iterable[SeqRecord], fout: InputPath) -> None:
     """Append records with new IDs to a FASTA file, or create the file."""
     if not os.path.isfile(fout):
         SeqIO.write(new_records, fout, "fasta")
@@ -524,7 +524,7 @@ class SeqFeatures:
         seq: str,
         residues: DataFrame | None = None,
         charge_termini: bool = False,
-        nu_file: str | PathLike[str] | None = None,
+        nu_file: InputPath | None = None,
         ah_intgrl_map: PairMap | None = None,
         lambda_map: PairMap | None = None,
         flexhis: bool = False,

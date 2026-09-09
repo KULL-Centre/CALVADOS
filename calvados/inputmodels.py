@@ -1,18 +1,20 @@
 from collections.abc import Mapping
-from typing import Any, Literal, Self
+from os import PathLike
+from pathlib import Path
+from typing import Any, Literal, Self, TypeAlias
+
 from pydantic import (
-    Field,
     BaseModel,
-    PositiveInt,
-    NonNegativeInt,
     ConfigDict,
-    PositiveFloat,
+    Field,
     NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
     model_validator,
 )
-from pathlib import Path
 
-MoleculeType = Literal[
+MoleculeType: TypeAlias = Literal[
     "protein",
     "rna",
     "lipid",
@@ -23,9 +25,9 @@ MoleculeType = Literal[
     "ptm_protein",
 ]
 
-InputPath = Path | str
-RestraintChoices = Literal["harmonic", "go"]
-TopolType = Literal[
+InputPath: TypeAlias = PathLike | str
+RestraintChoices: TypeAlias = Literal["harmonic", "go"]
+TopolType: TypeAlias = Literal[
     "single",
     "slab",
     "grid",
