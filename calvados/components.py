@@ -45,6 +45,7 @@ class Component:
             raise FileNotFoundError(
                 f"Residue parameter file name (fresidues) not supplied to component {name}."
             )
+        self.comp_setup = "compact"
 
     def calc_comp_seq(self) -> None:
         """Calculate the component sequence."""
@@ -86,16 +87,15 @@ class Component:
     def calc_x_setup(
         self,
         d: float = 0.38,
-        comp_setup: str = "spiral",
         n_per_res: int = 1,
         ys: NDArray[np.float64] | None = None,
     ) -> None:
         """Generate initial coordinates using the requested arrangement."""
-        if comp_setup == "spiral":
+        if self.comp_setup == "spiral":
             self.xinit = build.build_spiral(
                 self.bondlengths, arc=d, n_per_res=n_per_res
             )
-        elif comp_setup == "compact":
+        elif self.comp_setup == "compact":
             self.xinit = build.build_compact(self.nbeads, d=d)
         else:
             self.xinit = build.build_linear(
@@ -203,7 +203,7 @@ class Protein(Component):
         self.bondscale = expit(-bscale_width * (self.scale - bscale_shift))
 
     def calc_properties(
-        self, pH: float = 7.0, verbose: bool = False, comp_setup: str = "spiral"
+        self, pH: float = 7.0, verbose: bool = False,
     ) -> None:
         """Calculate protein properties and initial coordinates."""
 
@@ -230,7 +230,7 @@ class Protein(Component):
             elif self.restraint_type == "go":
                 self.calc_go_scale()
         else:
-            self.calc_x_setup(comp_setup=comp_setup)
+            self.calc_x_setup()
 
     def calc_bondlength(
         self,
@@ -370,6 +370,13 @@ class RNA(Component):
     RNA components include backbone bonds, angles, and neighboring-base forces.
     """
 
+    def __init__(self,
+            name: str,
+            params: ComponentInput,
+    ) -> None:
+        super().__init__(name, params)
+        self.comp_setup = "spiral"
+
     def calc_x_from_pdb(self) -> None:
         """Calculate RNA positions from a PDB structure."""
         pdb_file = f"{self.pdb_folder}/{self.name}.pdb"
@@ -390,7 +397,7 @@ class RNA(Component):
         self.ssdomains = ssdomains_bead
 
     def calc_properties(
-        self, pH: float = 7.0, verbose: bool = False, comp_setup: str = "spiral"
+        self, pH: float = 7.0, verbose: bool = False,
     ) -> None:
         """Calculate RNA properties and initial coordinates."""
 
@@ -414,7 +421,7 @@ class RNA(Component):
             if self.restraint_type == "harmonic":
                 self.calc_ssdomains()
         else:
-            self.calc_x_setup(comp_setup=comp_setup, d=0.59, n_per_res=2)
+            self.calc_x_setup(d=0.59, n_per_res=2)
 
         self.init_bond_force()
         self.init_angle_force()
@@ -544,10 +551,10 @@ class RNA(Component):
         return condition and condition_termini
 
     def calc_x_setup(
-        self, comp_setup: str = "spiral", d: float = 0.59, n_per_res: int = 2
+        self, d: float = 0.59, n_per_res: int = 2, ys: NDArray[np.float64] | None = None,
     ) -> None:
         """Generate initial coordinates for the two-bead RNA model."""
-        if comp_setup == "spiral":
+        if self.comp_setup == "spiral":
             self.xinit = build.build_spiral(
                 self.bondlengths[1::2], arc=d, n_per_res=n_per_res
             )
@@ -713,15 +720,20 @@ class Lipid(Component):
     Both harmonic-angle and Cooke-style lipid force variants are supported.
     """
 
+    def __init__(self,
+            name: str,
+            params: ComponentInput,
+    ) -> None:
+        super().__init__(name, params)
+        self.comp_setup = "linear"
+
     def calc_properties(
-        self, pH: float = 7.0, verbose: bool = False, comp_setup: str = "spiral"
+        self, pH: float = 7.0, verbose: bool = False,
     ):
         """Calculate lipid properties and initial coordinates."""
 
         super().calc_properties(pH=pH, verbose=verbose)
-        self.calc_x_setup(
-            comp_setup=comp_setup
-        )  # can be overwritten in custom component
+        self.calc_x_setup()  # can be overwritten in custom component
 
     @staticmethod
     def bond_check(i: int, j: int):
@@ -816,14 +828,12 @@ class Crowder(Component):
     """
 
     def calc_properties(
-        self, pH: float = 7.0, verbose: bool = False, comp_setup: str = "spiral"
+        self, pH: float = 7.0, verbose: bool = False,
     ):
         """Calculate crowder properties and initial coordinates."""
 
         super().calc_properties(pH=pH, verbose=verbose)
-        self.calc_x_setup(
-            comp_setup=comp_setup
-        )  # can be overwritten in custom component
+        self.calc_x_setup()  # can be overwritten in custom component
 
     @staticmethod
     def bond_check(i: int, j: int):
@@ -914,3 +924,14 @@ class PTMProtein(Protein):
             if (j == i + 1) and (j not in ptm_seqlocs):  # avoid bonding different PTMs
                 return True
         return False
+
+COMPONENT_REGISTRY: dict[str, type[Component]] = {
+    "protein": Protein,
+    "lipid": Lipid,
+    "cooke_lipid": Lipid,
+    "crowder": Crowder,
+    "rna": RNA,
+    "cyclic": Cyclic,
+    "seastar": Seastar,
+    "ptm_protein": PTMProtein,
+}

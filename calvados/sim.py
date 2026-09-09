@@ -11,7 +11,7 @@ from yaml import safe_load
 
 from calvados import build, interactions
 
-from .components import *
+from .components import Component, COMPONENT_REGISTRY
 from .inputmodels import validate_inputs
 
 
@@ -53,37 +53,38 @@ class Sim:
         self.use_restraints = False
 
         for name, comp_params in self.comp_dict.items():
-            molecule_type = comp_params.molecule_type
-            if molecule_type == 'protein':
-                # Protein component
-                comp_setup = 'compact'
-                comp = Protein(name, comp_params)
-            elif molecule_type in ['lipid','cooke_lipid']:
-                # Lipid component
-                comp_setup = 'linear'
-                comp = Lipid(name, comp_params)
-            elif molecule_type in ['crowder']:
-                # Crowder component
-                comp_setup = 'compact'
-                comp = Crowder(name, comp_params)
-            elif molecule_type in ['rna']:
-                # Crowder component
-                comp_setup = 'spiral'
-                comp = RNA(name, comp_params)
-            elif molecule_type == 'cyclic':
-                comp_setup = 'compact'
-                comp = Cyclic(name, comp_params)
-            elif molecule_type == 'seastar':
-                comp_setup = 'compact'
-                comp = Seastar(name, comp_params)
-            elif molecule_type == 'ptm_protein':
-                comp_setup = 'compact'
-                comp = PTMProtein(name, comp_params)
-            else:
-                raise ValueError(f"Component of type {molecule_type} not found.")
+            component_class = COMPONENT_REGISTRY[comp_params.molecule_type]
+            comp = component_class(name, comp_params)
+
+            # if molecule_type == 'protein':
+            #     # Protein component
+            
+            #     comp = Protein(name, comp_params)
+            # elif molecule_type in ['lipid','cooke_lipid']:
+            #     # Lipid component
+            #     comp = Lipid(name, comp_params)
+            # elif molecule_type in ['crowder']:
+            #     # Crowder component
+            #     comp_setup = 'compact'
+            #     comp = Crowder(name, comp_params)
+            # elif molecule_type in ['rna']:
+            #     # Crowder component
+            #     comp_setup = 'spiral'
+            #     comp = RNA(name, comp_params)
+            # elif molecule_type == 'cyclic':
+            #     comp_setup = 'compact'
+            #     comp = Cyclic(name, comp_params)
+            # elif molecule_type == 'seastar':
+            #     comp_setup = 'compact'
+            #     comp = Seastar(name, comp_params)
+            # elif molecule_type == 'ptm_protein':
+            #     comp_setup = 'compact'
+            #     comp = PTMProtein(name, comp_params)
+            # else:
+            #     raise ValueError(f"Component of type {comp_params.molecule_type} not found.")
 
             comp.eps_lj = self.eps_lj
-            comp.calc_properties(pH=self.pH, verbose=self.verbose, comp_setup=comp_setup)
+            comp.calc_properties(pH=self.pH, verbose=self.verbose)
             if comp.restraint:
                 if comp.restraint_type == 'go':
                     comp.init_restraint_force(
@@ -102,6 +103,8 @@ class Sim:
 
         self.ncomponents = 0
         self.nmolecules = 0
+        self.nmols_per_comp_type: dict[str,int] = {}
+        self.comp_types: set[str] = set()
 
         for comp in self.components:
             self.ncomponents += 1
@@ -110,22 +113,13 @@ class Sim:
         print(f'Total number of components in the system: {self.ncomponents}')
         print(f'Total number of molecules in the system: {self.nmolecules}')
 
-        # move lipids at the end of the array
-        molecule_types = np.asarray([c.molecule_type for c in self.components])
-        self.nlipids = np.sum([c.nmol if c.molecule_type == 'lipid' else 0 for c in self.components])
-        self.ncookelipids = np.sum([c.nmol if c.molecule_type == 'cooke_lipid' else 0 for c in self.components])
-        self.nproteins = np.sum([c.nmol if c.molecule_type == 'protein' else 0 for c in self.components])
-        self.ncrowders = np.sum([c.nmol if c.molecule_type == 'crowder' else 0 for c in self.components])
-        self.nrnas = np.sum([c.nmol if c.molecule_type == 'rna' else 0 for c in self.components])
-
         if ((self.ncomponents > 1) or (self.nmolecules > 1)) and (self.topol in ['single', 'center']):
-            raise ValueError("Topol 'center' incompatible with multiple molecules.")
+            raise ValueError("Topol 'single/center' incompatible with multiple molecules.")
 
-        # move proteins at the beginning of the array
-        if self.nmolecules > self.nproteins:
-            protein_components = self.components[np.where(molecule_types=='protein')]
-            non_protein_components = self.components[np.where(molecule_types!='protein')]
-            self.components = np.append(protein_components,non_protein_components)
+        for comp in self.components:
+            self.nmols_per_comp_type[comp.molecule_type] = self.nmols_per_comp_type.get(comp.molecule_type, 0) + comp.nmol
+            if comp.nmol > 0:
+                self.comp_types.add(comp.molecule_type)
 
     def build_system(self):
         """
@@ -149,16 +143,33 @@ class Sim:
         self.make_components()
         self.count_components()
 
+        self.solute_types = ["protein", "rna", "cyclic", "seastar", "ptm_protein"]
+        self.nsolutes = sum(
+            self.nmols_per_comp_type.get(comp_type, 0)
+            for comp_type in self.solute_types
+        )
+
+        # Re-order "solutes" before non-"solutes"
+        molecule_types = np.asarray(
+            [comp.molecule_type for comp in self.components]
+        )
+        solute_mask = np.isin(molecule_types, self.solute_types)
+
+        solute_components = self.components[solute_mask]
+        non_solute_components = self.components[~solute_mask]
+
+        self.components = np.append(solute_components, non_solute_components)
+
         # init interactions
         self.ah, self.yu = interactions.init_nonbonded_interactions(
             self.eps_lj,self.cutoff_lj,self.eps_yu,self.k_yu,self.cutoff_yu,self.fixed_lambda
             )
-        if self.nlipids > 0:
+        if "lipid" in self.comp_types:
             self.cos, self.cn = interactions.init_lipid_interactions(
             self.eps_lj,self.eps_yu,self.cutoff_yu,factor=1.9
             )
-        if self.ncookelipids > 0:
-            if self.nlipids > 0:
+        if "cooke_lipid" in self.comp_types:
+            if "lipid" in self.comp_types:
                 raise ValueError(
                     "lipid and cooke_lipid components cannot both be present"
                 )
@@ -171,39 +182,40 @@ class Sim:
 
         self.pos = []
 
-        if self.topol == 'slab': # proteins + rna
+
+        if self.topol == 'slab': # proteins + rna            
             slab_box = np.array(
                 [self.box[0], self.box[1], self.slab_width], dtype=float
             )
-            self.xyzgrid = build.build_xyzgrid(self.nproteins+self.nrnas, slab_box)
+            self.xyzgrid = build.build_xyzgrid(self.nsolutes, slab_box)
             self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width/2.])
-            if self.ncrowders > 0: # crowder
+            if "crowder" in self.comp_types: # crowder
                 crowder_box = np.array(
                     [self.box[0], self.box[1], self.box[2]/2.-self.slab_outer],
                     dtype=float,
                 )
-                xyzgrid = build.build_xyzgrid(np.ceil(self.ncrowders/2.), crowder_box)
+                xyzgrid = build.build_xyzgrid(np.ceil(self.nmols_per_comp_type["crowder"]/2.), crowder_box)
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.slab_outer]), axis=0)
         elif self.topol == 'grid':
             self.xyzgrid = build.build_xyzgrid(self.nmolecules,self.box)
-        if self.nlipids > 0:
-            self.bilayergrid = build.build_xygrid(int(self.nlipids*1.05),self.box)
-            if (self.nproteins + self.nrnas) > 0:
+        if "lipid" in self.comp_types:
+            self.bilayergrid = build.build_xygrid(int(self.nmols_per_comp_type["lipid"]*1.05),self.box)
+            if self.nsolutes > 0:
                 outer_box = np.array(
                     [self.box[0], self.box[1], self.box[2]/2.-self.box[0]],
                     dtype=float,
                 )
-                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.), outer_box)
+                xyzgrid = build.build_xyzgrid(np.ceil(self.nsolutes/2.), outer_box)
                 self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
-        if self.ncookelipids > 0:
-            self.bilayergrid = build.build_xygrid(int(self.ncookelipids*1.05),self.box)
-            if (self.nproteins + self.nrnas) > 0:
+        if "cooke_lipid" in self.comp_types:
+            self.bilayergrid = build.build_xygrid(int(self.nmols_per_comp_type["cooke_lipid"]*1.05),self.box)
+            if self.nsolutes > 0:
                 outer_box = np.array(
                     [self.box[0], self.box[1], self.box[2]/2.-self.box[0]],
                     dtype=float,
                 )
-                xyzgrid = build.build_xyzgrid(np.ceil((self.nproteins+self.nrnas)/2.), outer_box)
+                xyzgrid = build.build_xyzgrid(np.ceil(self.nsolutes/2.), outer_box)
                 self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
 
         for cidx, comp in enumerate(self.components):
@@ -215,12 +227,10 @@ class Sim:
                 self.add_particles_system(comp.mws)
 
                 # add interactions + restraints
-                if comp.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein']:
+                if comp.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein','rna']:
                     xs = self.place_molecule(comp)
                 elif comp.molecule_type in ['lipid','cooke_lipid']:
                     xs = self.place_bilayer(comp)
-                elif comp.molecule_type == 'rna':
-                    xs = self.place_molecule(comp)
                 self.add_interactions(comp)
 
                 # add restraints towards box center
@@ -248,7 +258,7 @@ class Sim:
         for force in [self.yu, self.ah]:
             self.system.addForce(force)
 
-        if (self.nlipids > 0) or (self.ncookelipids > 0):
+        if ("lipid" in self.comp_types) or ("cooke_lipid" in self.comp_types):
             for force in [self.cos, self.cn]:
                 self.system.addForce(force)
 
@@ -400,7 +410,7 @@ class Sim:
         for excl in exclusion_map:
             self.ah = interactions.add_exclusion(self.ah, excl[0], excl[1])
             self.yu = interactions.add_exclusion(self.yu, excl[0], excl[1])
-            if self.nlipids > 0 or self.ncookelipids > 0:
+            if ("lipid" in self.comp_types) or ("cooke_lipid" in self.comp_types):
                 self.cos.addExclusion(excl[0], excl[1])
                 self.cn.addExclusion(excl[0], excl[1])
 
@@ -419,7 +429,7 @@ class Sim:
                 self.ah.addParticle([sig*unit.nanometer, lam, -1])
             else: # protein, RNA
                 self.ah.addParticle([sig*unit.nanometer, lam, 1])
-            if self.nlipids > 0 or self.ncookelipids > 0:
+            if ("lipid" in self.comp_types) or ("cooke_lipid" in self.comp_types):
                 if comp.molecule_type in ['lipid', 'cooke_lipid']:
                     self.cos.addParticle([sig*unit.nanometer, lam, 0])
                 else:
@@ -429,7 +439,7 @@ class Sim:
             self.yu.addParticle([q])
 
         # Add Charge-Nonpolar Interaction
-        if self.nlipids > 0 or self.ncookelipids > 0:
+        if ("lipid" in self.comp_types) or ("cooke_lipid" in self.comp_types):
             id_cn = 1 if comp.molecule_type == 'protein' else -1
             for sig, alpha, q in zip(comp.sigmas, comp.alphas, comp.qs):
                 self.cn.addParticle([(sig/2)**3, alpha, q, id_cn])
