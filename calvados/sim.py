@@ -334,8 +334,8 @@ class Sim:
             self.system.addForce(self.cres)
             print(f'Number of custom restraints: {self.cres.getNumBonds()}')
 
-        # barostat force
-        if self.box_eq:
+        # barostat force, for equilibration and/or production
+        if self.box_eq or (self.config.box_eq and self.config.pressure_coupling):
             assert self.config.pressure is not None
             barostat = openmm.MonteCarloAnisotropicBarostat(
                 [
@@ -351,8 +351,8 @@ class Sim:
             )
             self.system.addForce(barostat)
 
-        # Bilayer eq. force
-        if self.bilayer_eq:
+        # Bilayer eq. force, for equilibration and/or production
+        if self.bilayer_eq or (self.config.bilayer_eq and self.config.pressure_coupling):
             assert self.config.pressure is not None
             barostat = openmm.MonteCarloMembraneBarostat(
                 self.config.pressure[0] * unit.bar,
@@ -381,8 +381,15 @@ class Sim:
         if self.bilayer_eq:
             print('Equilibration under zero lateral tension')
         if self.box_eq:
-            print('Equilibration through changes in box side lengths along '+' and '.join(np.array(['X','Y','Z'])[self.config.boxscaling_xyz]))
-
+            axes = [
+                axis
+                for axis, enabled in zip("XYZ", self.config.boxscaling_xyz)
+                if enabled
+            ]
+            print(
+                "Equilibration through changes in box side lengths along "
+                + " and ".join(axes)
+            )
     def place_molecule(
             self,
             comp: Component,

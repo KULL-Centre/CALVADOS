@@ -16,15 +16,25 @@ def test_split_steps_preserves_requested_total(steps: int) -> None:
 
 
 @pytest.mark.parametrize(
-    ("box_eq", "bilayer_eq", "barostat_type"),
+    (
+        "box_eq",
+        "bilayer_eq",
+        "config_box_eq",
+        "config_bilayer_eq",
+        "barostat_type",
+    ),
     [
-        (True, False, openmm.MonteCarloAnisotropicBarostat),
-        (False, True, openmm.MonteCarloMembraneBarostat),
+        (True, False, True, False, openmm.MonteCarloAnisotropicBarostat),
+        (False, True, False, True, openmm.MonteCarloMembraneBarostat),
+        (False, False, True, False, openmm.MonteCarloAnisotropicBarostat),
+        (False, False, False, True, openmm.MonteCarloMembraneBarostat),
     ],
 )
 def test_adds_requested_barostat(
     box_eq: bool,
     bilayer_eq: bool,
+    config_box_eq: bool,
+    config_bilayer_eq: bool,
     barostat_type: type,
 ) -> None:
     simulation = Sim.__new__(Sim)
@@ -39,6 +49,9 @@ def test_adds_requested_barostat(
         pressure=(1.0, 1.0, 1.0),
         temp=298.0,
         boxscaling_xyz=(True, True, True),
+        box_eq=config_box_eq,
+        bilayer_eq=config_bilayer_eq,
+        pressure_coupling=True,
     )
     simulation.slab_eq = False
     simulation.box_eq = box_eq

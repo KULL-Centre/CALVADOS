@@ -33,6 +33,16 @@ def test_cmap_traj_normalizes_selected_frames(
     np.testing.assert_array_equal(cmap, np.ones((2, 3)))
 
 
+def test_calc_zpatch_includes_patch_at_final_bin() -> None:
+    z = np.arange(4, dtype=float)
+    counts = np.array([0, 0, 2, 3])
+
+    zpatch, hpatch = analysis.SlabAnalysis.calc_zpatch(z, counts)
+
+    np.testing.assert_array_equal(zpatch, [2.0, 3.0])
+    np.testing.assert_array_equal(hpatch, [2, 3])
+
+
 def test_calc_com_traj_uses_configured_input_and_step(tmp_path: Path) -> None:
     topology = md.Topology()
     chain = topology.add_chain()

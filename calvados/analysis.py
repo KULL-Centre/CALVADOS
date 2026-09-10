@@ -1137,6 +1137,9 @@ class SlabAnalysis:
                 ct = 0.
                 zwindow = []
                 hwindow = []
+        if ct > ct_max:
+            zpatch = zwindow
+            hpatch = hwindow
         return np.array(zpatch), np.array(hpatch)
 
     @staticmethod
@@ -1300,7 +1303,7 @@ def calc_com_traj(
         if isinstance(chainids, int):
             chainids = (chainids, chainids)
         seq = [res.name for res in traj.top.chain(chainids[0]).residues]
-        mws = residues.loc[seq,'MW'].values
+        mws = residues.loc[seq,'MW'].to_numpy(copy=True)
         mws[0] += 2
         mws[-1] += 16
         chain_prop[chain_name]['ids'] = np.arange(chainids[0],chainids[1]+1)
