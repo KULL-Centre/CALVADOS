@@ -37,6 +37,14 @@ TopolType: TypeAlias = Literal[
 ]
 
 class ComponentInput(BaseModel):
+    """Validate the definition of one molecular component.
+
+    The model covers sequence and residue inputs, molecule counts, optional
+    structure-based restraints, and parameters specific to RNA, branched, and
+    post-translationally modified components. Unknown fields are rejected so
+    misspelled configuration keys fail early.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     name: str
@@ -103,6 +111,14 @@ class ComponentInput(BaseModel):
 
 
 class SimulationInput(BaseModel):
+    """Validate global simulation, topology, and runtime settings.
+
+    A simulation may be bounded by either ``steps`` or ``runtime``. The model
+    also checks the combinations of slab geometry, pressure equilibration,
+    restart behavior, custom restraints, and execution-platform options used
+    when constructing an OpenMM simulation.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     box: tuple[PositiveFloat, PositiveFloat, PositiveFloat]
@@ -217,6 +233,12 @@ class SimulationInput(BaseModel):
 
 
 class JobInput(BaseModel):
+    """Validate settings used to render a cluster submission script.
+
+    The selected Jinja template is populated with the environment setup file,
+    Conda environment name, and either the SLURM or PBS batch-system choice.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     template: InputPath = "robust.jinja"

@@ -36,7 +36,10 @@ def center_traj(
     stop: int | None = None,
     step: int = 1,
 ) -> None:
-    """ Center trajectory """
+    """Center each trajectory frame in the periodic box.
+
+    Writes ``<traj>_c.dcd`` beside the input trajectory and returns nothing.
+    """
     pdb = os.fspath(pdb)
     traj = os.fspath(traj)
     u = mda.Universe(pdb,traj)
@@ -52,7 +55,7 @@ def subsample_traj(
     stop: int | None = None,
     step: int = 1,
 ) -> None:
-    """ Subsample trajectory """
+    """Write a selected range of frames to ``<traj>_sub.dcd``."""
     pdb = os.fspath(pdb)
     traj = os.fspath(traj)
 
@@ -74,16 +77,10 @@ def calc_energy(
     rc_yu: float = 4.0,
     same_domain: bool = False,
 ) -> tuple[FloatArray, FloatArray]:
-    """ AH and YU energ
+    """Calculate pairwise Ashbaugh-Hatch and Yukawa energies.
 
-    Input:
-      * r: distance map
-      * sig: sigma map
-      * lam: lambda map
-      * rc_lj: LJ cutoff
-      * eps_lj: LJ prefactor
-      * qmap: charge product map (including prefactors)
-      *
+    Returns two arrays shaped like ``dmap``: Ashbaugh-Hatch energies first and
+    Yukawa energies second, in the units implied by the supplied prefactors.
     """
     u_ah = np.zeros(dmap.shape)
     u_yu = np.zeros(dmap.shape)
@@ -109,6 +106,7 @@ def calc_energy(
 def yukawa_potential(
     r: float, q: float, kappa_yu: float, rc_yu: float = 4.0
 ) -> float:
+    """Return the shifted Yukawa energy at separation ``r``."""
     # q = epsi_yu * epsj_yu
     shift = np.exp(-kappa_yu*rc_yu)/rc_yu
     u = q * (np.exp(-kappa_yu*r)/r - shift)
@@ -116,11 +114,13 @@ def yukawa_potential(
 
 @nb.jit(nopython=True)
 def lj_potential(r: float, sig: float, eps: float) -> float:
+    """Return the Lennard-Jones energy at separation ``r``."""
     ulj = 4.*eps*((sig/r)**12 - (sig/r)**6)
     return ulj
 
 @nb.jit(nopython=True)
 def ah_potential(r: float, sig: float, eps: float, l: float, rc: float) -> float:
+    """Return the shifted, cutoff Ashbaugh-Hatch energy at separation ``r``."""
     if r <= 2**(1./6.)*sig:
         ah = lj_potential(r,sig,eps) - l * lj_potential(rc,sig,eps) + eps * (1 - l)
     elif r <= rc:
@@ -130,10 +130,10 @@ def ah_potential(r: float, sig: float, eps: float, l: float, rc: float) -> float
     return ah
 
 def calc_dmap(domain0: Any, domain1: Any) -> FloatArray:
-    """ Distance map (nm) for single configuration
+    """Return the periodic pairwise distance map between atom groups in nm.
 
-    Input: Atom groups
-    Output: Distance map"""
+    The result has shape ``(len(domain0), len(domain1))``.
+    """
     dmap = distances.distance_array(domain0.positions, # reference
                                     domain1.positions, # configuration
                                     box=domain0.dimensions) / 10.
@@ -141,6 +141,7 @@ def calc_dmap(domain0: Any, domain1: Any) -> FloatArray:
 
 
 def calc_raw_dmap(pos0: FloatArray, pos1: FloatArray) -> FloatArray:
+    """Return pairwise distances in the coordinate arrays' input units."""
     dmap = distances.distance_array(pos0,pos1)
     return cast(FloatArray, dmap)
 
@@ -148,13 +149,10 @@ def calc_raw_dmap(pos0: FloatArray, pos1: FloatArray) -> FloatArray:
 def self_distances(
     pos: FloatArray, box: FloatArray | None = None
 ) -> FloatArray:
-    """ Self distance map for matrix of positions
+    """Return a symmetric self-distance matrix for a coordinate array.
 
-    If box dimensions are provided, distances are
-    calculated using minimum image convention
-
-    Input: Matrix of positions and (optional) box dimensions
-    Output: Self distance map
+    When ``box`` is supplied, distances use the minimum-image convention. The
+    result has shape ``(len(pos), len(pos))`` and a zero diagonal.
     """
     N = len(pos)
     dmap = np.zeros((N,N))
@@ -177,10 +175,11 @@ def calc_wcn(
     ssonly: bool = True,
     r0: float = 0.7,
 ) -> FloatArray:
+    """Calculate the weighted contact number for every bead.
+
+    ``pos`` and switching distance ``r0`` are in nm. The returned array contains
+    one contact number per bead; ``ssonly`` restricts pairs to shared domains.
     """
-    pos: positions [nm]
-    r0: switching parameter [nm]
-    r0: switching parameter [nm] """
     N = len(pos)
     # print(f'N: {N}')
     dmap = calc_raw_dmap(pos,pos)
@@ -216,10 +215,10 @@ def calc_wcn(
 #     return(cmap)
 
 def calc_cmap(domain0: Any, domain1: Any, cutoff: float = 1.0) -> FloatArray:
-     """ Contact map for single configuration
+     """Return a smooth contact map between two MDAnalysis atom groups.
 
-     Input: MDAnalysis Atom groups (can be the same or different)
-     Output: Contact map
+     The result has shape ``(len(domain0), len(domain1))`` with values from zero
+     to one; ``cutoff`` is expressed in nm.
      """
      # Cutoff in nm
      dmap = calc_dmap(domain0,domain1)
@@ -235,13 +234,10 @@ def cmap_traj(
     end: int | None = None,
     step: int = 1,
 ) -> FloatArray:
-    """ Average number of contacts along trajectory
+    """Return the trajectory-averaged smooth contact map.
 
-    Input:
-      * Universe
-      * Atom groups
-    Output:
-      * Average contact map
+    The array has shape ``(len(domain0), len(domain1))`` and contains mean
+    contact weights over the selected frames.
     """
     cmap = np.zeros((len(domain0),len(domain1)))
     for ts in u.trajectory[start:end:step]:
@@ -259,6 +255,11 @@ def calc_fnc(
     sig_shift: float = 0.8,
     width: float = 50.0,
 ) -> FloatArray:
+    """Calculate the fraction of native contacts for each trajectory frame.
+
+    Native contacts come from ``uref`` after excluding diagonals through
+    ``kmax``. The result contains one normalized contact fraction per frame.
+    """
     agref = uref.select_atoms(selstr)
     ag = u.select_atoms(selstr)
 
@@ -292,6 +293,12 @@ def calc_rmsd(
     f_out: InputPath | None = None,
     step: int = 1,
 ) -> tuple[FloatArray, FloatArray, FloatArray]:
+    """Calculate RMSD to reference and mean structures plus per-atom RMSF.
+
+    Returns ``(reference_rmsd, mean_rmsd, mean_rmsf)``. RMSD values use the
+    transposed MDAnalysis result-table layout and distances are in Å. When
+    ``f_out`` is supplied, the final mean structure is written there.
+    """
     # print('First alignment')
     _ = AlignTraj(u, uref, select=select, in_memory=True).run(step=step) # align to crystal structure
     Rref = rms.RMSD(u,uref,select=select) # get RMSD to reference
@@ -321,12 +328,13 @@ def calc_rmsd(
 def get_masses(
     seq: Sequence[str], residues: pd.DataFrame, charge_termini: bool = True
 ) -> FloatArray:
+    """Return residue masses in Da, optionally including terminal atoms."""
     lseq = list(seq)
     masses = np.array(residues.loc[lseq,'MW'].values, dtype=np.float64)
     if charge_termini:
         masses[0] += 2.
         masses[-1] += 16.
-    return cast(FloatArray, masses)
+    return masses
 
 def calc_rg(
     u: Any,
@@ -337,6 +345,11 @@ def calc_rg(
     stop: int | None = None,
     step: int | None = None,
 ) -> FloatArray:
+    """Return the radius of gyration in nm for each selected frame.
+
+    Sequence-derived masses are used when ``seq`` and ``residues`` are supplied;
+    otherwise all atoms receive equal weight.
+    """
     if len(seq) > 0:
         masses = get_masses(seq, cast(pd.DataFrame, residues))
         # print(masses)
@@ -359,7 +372,10 @@ def calc_ete(
     stop: int | None = None,
     step: int | None = None,
 ) -> tuple[FloatArray, float, float]:
-    """ Mean and std of end to end distance of atom group across trajectory """
+    """Calculate end-to-end distances across a trajectory.
+
+    Returns ``(distances, mean, standard_error)`` in nm for selected frames.
+    """
     ete_values: list[float] = []
     # etes2 = []
     for t, ts in enumerate(u.trajectory[start:stop:step]):
@@ -380,7 +396,10 @@ def calc_ocf(
     stop: int | None = None,
     step: int | None = None,
 ) -> tuple[FloatArray, FloatArray]:
-    """ Orientational correlation factor (OCF) as function of separation along the chain """
+    """Calculate orientational correlation versus separation along a chain.
+
+    Returns ``(mean_ocf, sem_ocf)`` arrays indexed by bond separation.
+    """
     ocf_values: list[list[float]] = []
     for t,ts in enumerate(u.trajectory[start:stop:step]):
         x = ag.positions / 10.
@@ -406,6 +425,7 @@ def calc_ocf(
 #### SCALING EXPONENT
 
 def scaling_exp(n: FloatArray, r0: float, v: float) -> FloatArray:
+    """Evaluate the polymer scaling relation ``r0 * n**v``."""
     rh = r0 * n**v
     return rh
 
@@ -420,16 +440,11 @@ def fit_scaling_exp(
     slic: Sequence[int] = (),
     ij0: int = 5,
 ) -> tuple[IntArray, FloatArray, float, float, float]:
-    """ Fit scaling exponent of single chain
+    """Fit the internal-distance scaling exponent of a single chain.
 
-    Input:
-      * mda Universe
-      * atom group
-    Output:
-      * ij seq distance
-      * dij cartesian distance
-      * r0
-      * v (scaling exponent)
+    Returns ``(sequence_separation, rms_distance, r0, nu, nu_error)``. The first
+    two entries are arrays indexed by residue separation, distances and ``r0``
+    are in nm, and ``nu_error`` is obtained from the fit covariance.
     """
     N = len(ag)
     dmap = np.zeros((N,N))
@@ -486,6 +501,12 @@ def save_conf_prop(
     cutoff: float = 1.0,
     kmax: int = 3,
 ) -> None:
+    """Calculate and save single-chain conformational observables.
+
+    Writes per-frame ``rgs.npy`` and ``rees.npy``, a ``conf_prop.csv`` summary,
+    and ``cmap.npy``. For IDRs it additionally writes
+    ``internal_distances.npy`` and reports the fitted scaling exponent.
+    """
     path = os.fspath(path)
     output_path = os.fspath(output_path)
     residues = pd.read_csv(residues_file).set_index('three')
@@ -517,6 +538,16 @@ def save_conf_prop(
     np.save(output_path+'/cmap.npy',cmap)
 
 class SlabAnalysis:
+    """Analyze concentration and structural profiles across a slab simulation.
+
+    The workflow centers a trajectory, builds reference and optional client
+    concentration profiles along z, identifies dense and dilute regions, and
+    writes concentrations, blocking errors, and transfer free energies. Extra
+    methods produce orientation, radius-of-gyration, composition, and
+    center-of-mass profiles. Distances used internally for histogramming are in
+    Å, while public profile coordinates and concentrations are in nm and mM.
+    """
+
     def __init__(
         self,
         name: str,
@@ -531,6 +562,7 @@ class SlabAnalysis:
         client_names: Sequence[str] = (),
         verbose: bool = False,
     ) -> None:
+        """Configure slab inputs, component chain ranges, and output paths."""
         self.name = name
         self.input_path = os.fspath(input_path)
         self.output_path = os.fspath(output_path)
@@ -567,9 +599,9 @@ class SlabAnalysis:
         step: int = 1,
         center_target: str = "ref",
     ) -> None:
-        """
-        Center slab trajectory.
-        center_target: 'ref' or 'all'. Define if particles for centering are from reference or whole system.
+        """Center and unwrap a slab trajectory around reference or all atoms.
+
+        Selected frames are written to ``centered_dcd``; no value is returned.
         """
 
         u = mda.Universe(f'{self.input_path}/{self.input_pdb}', f'{self.input_path}/{self.input_dcd}', in_memory=True)
@@ -631,9 +663,12 @@ class SlabAnalysis:
         step: int = 1,
         save_individual_profiles: bool = True,
     ) -> None:
+        """Calculate z concentration profiles for reference and client chains.
+
+        Individual outputs have shape ``(n_frames, n_bins)`` in mM. The combined
+        ``<name>_profiles.npy`` stores z coordinates in its first row followed by
+        trajectory-averaged profiles for the reference and each client.
         """
-        Calculate concentration profiles for reference chains (and possible clients).
-        Keep start=None, end=None, step=1 if the centered trajectory is already cropped. """
 
         self.load_traj(centered=True, step=step)
         self.load_ref()
@@ -692,6 +727,12 @@ class SlabAnalysis:
         write_conc_arrays: bool = True,
         plot_profiles: bool = True,
     ) -> None:
+        """Calculate dense/dilute concentrations and transfer free energies.
+
+        Results for every component are written to ``<name>_ps_results.csv``;
+        optional per-frame dense and dilute concentration arrays are saved as
+        NumPy files. This method returns nothing.
+        """
 
         self.pden, self.pdil = pden, pdil
         self.dGmin = dGmin
@@ -720,6 +761,7 @@ class SlabAnalysis:
     def save_conc_results(
         self, comp_name: str, results: ConcentrationResults
     ) -> None:
+        """Append scalar concentration results and optionally save frame arrays."""
         for key, val in results.items():
             if key in ['dense_array', 'dilute_array']:
                 if self.write_conc_arrays:
@@ -730,12 +772,12 @@ class SlabAnalysis:
     def calc_single_conc(
         self, h: FloatArray, ref: bool = True
     ) -> ConcentrationResults:
-        """
-        Calculate dense and dilute phase concentrations.
-        path: Input path.
-        input_file: Concentration profile array file (e.g. A1_ref_profile.npy).
-        Only specify start, end, step, if the conc. profile was from an uncropped trajectory (not default).
-        Provided cutoffs_dense and cutoffs_dilute (e.g. from a reference profile) skip the cutoff calculation.
+        """Calculate phase concentrations and errors from frame profiles.
+
+        ``h`` has shape ``(n_frames, n_bins)`` in mM. The result maps cutoff
+        positions, scalar dense/dilute concentrations and errors, per-frame
+        concentration arrays, and ``dG``/``dG_err`` in units of kT. Reference
+        profiles also establish the cutoffs reused for client profiles.
         """
 
         hm = np.mean(h,axis=0)
@@ -769,6 +811,7 @@ class SlabAnalysis:
         return results
 
     def load_traj(self, centered: bool = False, step: int = 1) -> None:
+        """Load the original or centered trajectory into ``self.u``."""
         if centered:
             dcd = self.centered_dcd
             traj_str = 'centered'
@@ -781,6 +824,7 @@ class SlabAnalysis:
             print(f'nframes: {len(self.u.trajectory[::step])}')
 
     def load_ref(self) -> None:
+        """Select reference chains and cache their atom groups and bead count."""
         if self.ref_chains is None:
             self.ref_chains = (0, len(self.u.segments)-1)
         self.sg_ref = self.u.segments[self.ref_chains[0]:self.ref_chains[1]+1]
@@ -799,6 +843,10 @@ class SlabAnalysis:
         bead_positions: FloatArray,
         L: float,
     ) -> tuple[FloatArray, FloatArray]:
+        """Accumulate a scalar property and sample counts in periodic z bins.
+
+        Returns the modified ``(prop_binned, bin_counts)`` arrays.
+        """
         for bpos in bead_positions:
             while (bpos >= L) or (bpos < 0.):
                 bpos -= (bpos // L) * L
@@ -808,10 +856,9 @@ class SlabAnalysis:
         return prop_binned, bin_counts
 
     def calc_orientations(self, step: int = 1) -> None:
-        """ 
-        Calculate orientational order parameter S along z,
-        distributed to bins corresponding to monomers of each chain.
-        Currently only for reference!
+        """Calculate the reference-chain orientational order profile along z.
+
+        Writes one mean order parameter per Å-wide bin to ``<name>_sz.npy``.
         """
         
         self.load_traj(centered=True, step=step)
@@ -840,9 +887,10 @@ class SlabAnalysis:
         np.save(f'{self.output_path}/{self.name}_sz.npy',sz_m)
 
     def calc_rgs(self, step: int = 1) -> None:
-        """
-        Calculate Rg along z,
-        distributed to bins corresponding to monomers of each chain.
+        """Calculate the reference-chain radius-of-gyration profile along z.
+
+        Writes one root-mean-square radius in nm per Å-wide bin to
+        ``<name>_rg.npy``; empty bins contain NaN.
         """
 
         self.load_traj(centered=True, step=step)
@@ -867,6 +915,7 @@ class SlabAnalysis:
         np.save(f'{self.output_path}/{self.name}_rg.npy',rg_m)
 
     def plot_density_profiles(self) -> None:
+        """Plot mean concentration profiles and phase cutoffs to a PDF."""
         fig, ax = plt.subplots(figsize=(8,4))
 
         for c1,c2 in zip(self.cutoffs_dense,self.cutoffs_dilute):
@@ -899,8 +948,10 @@ class SlabAnalysis:
         step: int = 1,
         index_col: str = "three",
     ) -> None:
-        """
-        Calculate trajectory of chain COMs and per-frame Rg's for each chain.
+        """Write the reference-chain center-of-mass trajectory.
+
+        Produces ``<name>_com_top.pdb`` and ``<name>_com_traj.dcd`` with one
+        center-of-mass particle per reference chain.
         """
 
         self.load_traj(centered=True, step=step)
@@ -955,7 +1006,7 @@ class SlabAnalysis:
         cmtraj.save_dcd(f'{self.output_path}/{self.name}_com_traj.dcd')
 
     def calc_aa_bins(self, step: int = 1) -> None:
-        """ Calculate bins of amino acid positions. """
+        """Count each amino-acid type by z bin and save ``<name>_aa_bins.npy``."""
 
         aminoacids = "ACDEFGHIKLMNPQRSTVWY"
 
@@ -989,6 +1040,7 @@ class SlabAnalysis:
         aa_indices: tuple[int, ...],
         L: float,
     ) -> FloatArray:
+        """Accumulate amino-acid counts into periodic z bins and return them."""
         for resid, bpos in enumerate(bead_positions):
         # for bpos, aa_idx in zip(bead_positions, aa_indices):
             aa_idx = aa_indices[resid]
@@ -1001,7 +1053,7 @@ class SlabAnalysis:
         return bins
 
     def calc_resid_bins(self, step: int = 1) -> None:
-        """ Calculate bins of amino acid positions. """
+        """Count each residue index by z bin and save ``<name>_resid_bins.npy``."""
 
         self.load_traj(centered=True, step=step)
         self.load_ref()
@@ -1020,6 +1072,7 @@ class SlabAnalysis:
     def resid_into_bins(
         bins: FloatArray, bead_positions: FloatArray, L: float
     ) -> FloatArray:
+        """Accumulate residue-index counts into periodic z bins and return them."""
         for resid, bpos in enumerate(bead_positions):
             while (bpos >=  L) or (bpos < 0.):
                 bpos -= (bpos // L) *  L
@@ -1037,11 +1090,13 @@ class SlabAnalysis:
 
     @staticmethod
     def calc_cos(a: FloatArray, b: FloatArray) -> float:
+        """Return the cosine of the angle between two vectors."""
         cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
         return cast(float, cos)
 
     @staticmethod
     def calc_z_Angstr(u: Any) -> tuple[float, FloatArray, FloatArray]:
+        """Return box length, edges, and centers for one-Å z bins."""
         lz = u.dimensions[2]
         edges = np.arange(0,lz+1,1)
         dz = (edges[1] - edges[0]) / 2.
@@ -1050,6 +1105,7 @@ class SlabAnalysis:
 
     @staticmethod
     def calc_z_nm_centered(u: Any) -> tuple[float, FloatArray, FloatArray]:
+        """Return box length in Å and centered z-bin edges and centers in nm."""
         lz = u.dimensions[2]
         edges = np.arange(-lz/2.,lz/2.+0.0001,1)/10
         dz = (edges[1] - edges[0]) / 2.
@@ -1060,6 +1116,7 @@ class SlabAnalysis:
     def calc_zpatch(
         z: FloatArray, h: NDArray[np.integer[Any]]
     ) -> tuple[FloatArray, FloatArray]:
+        """Return coordinates and counts for the largest occupied z patch."""
         cutoff = 0
         ct = 0.
         ct_max = 0.
@@ -1091,6 +1148,11 @@ class SlabAnalysis:
         ndraws: int = 10000,
         dGmin: float = -10,
     ) -> tuple[float, float]:
+        """Calculate transfer free energy and its Monte Carlo error in kT.
+
+        Returns ``(dG, dG_error)`` for ``log(c_dil / c_den)``. Undefined phases
+        yield NaN, and values below ``dGmin`` are clipped to that threshold.
+        """
         # Calculate deltaG
         if np.isnan(c_dil) or np.isnan(c_den):
             print("Not converged, setting dG to NaN")
@@ -1127,14 +1189,21 @@ class SlabAnalysis:
     def fit_profile(
         z: FloatArray, hm: FloatArray, pden: float, pdil: float
     ) -> tuple[FloatArray, FloatArray]:
+        """Fit both slab interfaces and return dense and dilute cutoff pairs.
+
+        Each returned two-element array is ordered ``(right, left)`` and uses
+        the same coordinate units as ``z``.
+        """
         def profile(
             x: FloatArray, a: float, b: float, c: float, d: float
         ) -> FloatArray:
+            """Evaluate the symmetric hyperbolic-tangent interface model."""
             return .5*(a+b)+.5*(b-a)*np.tanh((np.abs(x)-c)/d)
 
         def residuals(
             params: FloatArray, x_values: FloatArray, h_values: FloatArray
         ) -> FloatArray:
+            """Return observed-minus-model profile residuals."""
             return h_values - profile(x_values, *params)
         z1 = z[z>0]
         h1 = hm[z>0]
@@ -1157,7 +1226,7 @@ class SlabAnalysis:
     def calc_block_errors(
         denarray: FloatArray, dilarray: FloatArray
     ) -> tuple[float, float]:
-        """ Block error analysis """
+        """Return blocking errors for dense and dilute concentration arrays."""
 
         block_den = BlockAnalysis(denarray)
         block_dil = BlockAnalysis(dilarray)
@@ -1195,23 +1264,12 @@ def calc_com_traj(
     input_pdb: InputPath = "top.pdb",
     verbose: bool = False,
 ) -> None:
-    """
-    Calculate trajectory of chain COMs and per-frame Rg's for each chain.
+    """Calculate chain center-of-mass trajectories and radii of gyration.
 
-    Parameters:
-    -----------
-    chainid_dict : dict
-        Examples:
-            {'name_1': 0, 'name_2': 1}
-            {'name_1': (0, 99), 'name_2': (100, 199)}
-        - Keys are component names.
-        - Values are integers or tuples representing the first and last chain IDs.
-
-        The dictionary can contains as many entries as the number of components in the system.
-
-        If the dictionary is not provided as an argument, the function assumes a
-        single-component system named `sysname` and calculates a COM trajectory and per-frame Rg's
-        for all the chains in the topology.
+    ``chainid_dict`` maps component names to a chain ID or inclusive ID range;
+    by default all chains belong to ``sysname``. Writes one ``(n_frames,
+    n_chains)`` Rg array in nm per component, plus a PDB topology and DCD
+    trajectory containing one center-of-mass particle per chain. Returns nothing.
     """
     path = os.fspath(path)
     output_path = os.fspath(output_path)
@@ -1298,29 +1356,13 @@ def calc_contact_map(
     is_slab: bool = False,
     input_pdb: InputPath = "top.pdb",
 ) -> None:
-    """
-    Calculate the contact map between two sets of chain IDs specified in the given dictionary.
+    """Calculate and save a residue contact map between component chain sets.
 
-    Parameters:
-    -----------
-    chainid_dict : dict
-        Examples:
-            {'name_1': 0, 'name_2': 1}
-            {'name_1': (0, 99), 'name_2': (100, 199)}
-        - Keys are component names.
-        - Values are integers or tuples representing the first and last chain IDs.
-
-        If the dictionary contains only one chain entry, the function calculates a
-        homotypic contact map.
-        If the dictionary is not provided as an argument, the function assumes a
-        single-component system named `sysname` and calculates a homotypic contact using
-        all the chains in the topology.
-
-    is_slab : bool, optional (default=False)
-        If True, the function calculates a contact map between chains in the midplane
-        of the slab and all surrounding chains.
-        In this case, the first item in `chainid_dict` should be the component
-        used to center the slab in `SlabAnalysis`.
+    ``chainid_dict`` maps one or two component names to chain IDs or inclusive
+    ranges; one component requests a homotypic map. The output is an
+    ``(n_residues_1, n_residues_2)`` array of trajectory-averaged smooth contact
+    counts. In slab mode, only the most central reference chain in each frame is
+    used and dense/dilute Rg subsets are also saved. Returns nothing.
     """
     path = os.fspath(path)
     output_path = os.fspath(output_path)

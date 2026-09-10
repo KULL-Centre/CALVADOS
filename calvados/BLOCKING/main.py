@@ -8,6 +8,14 @@ from .block_tools import FloatArray, blocking, check, fblocking
 
 
 class BlockAnalysis:
+    """Estimate statistically reliable errors from correlated samples.
+
+    The input series may represent one or more concatenated replicas and may
+    be weighted directly or reweighted from a bias at temperature ``T``.
+    Blocking statistics are calculated at initialization; :meth:`SEM` selects
+    a converged block size and error, while the remaining methods construct
+    probability densities, free-energy surfaces, or weighted averages.
+    """
 
     def __init__(
         self,
@@ -20,6 +28,7 @@ class BlockAnalysis:
         interval_up: float | None = None,
         dt: float = 1,
     ) -> None:
+        """Prepare weighted or unweighted blocking statistics for ``x``."""
         self.multi = multi
         self.x = check(x, self.multi)
         self.w = weights
@@ -48,8 +57,10 @@ class BlockAnalysis:
         self.stat[...,0] /= dt
 
     def SEM(self) -> None:
+        """Select a converged block size and store it with the standard error."""
 
         def find_n_intersect(x: FloatArray, stat: FloatArray) -> int:
+                """Score how many error intervals contain a candidate value."""
                 c=0
                 for i,p in enumerate(stat):
                     if (x <= p[1]+p[2]) and (x >= p[1]-p[2]):
@@ -72,6 +83,7 @@ class BlockAnalysis:
     def get_pdf(
         self, cv: FloatArray | None = None
     ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        """Return grid points, kernel-density values, and blocking errors."""
 
         min_ = self.interval[0]
         max_ = self.interval[1]
@@ -120,6 +132,7 @@ class BlockAnalysis:
     def get_fes(
         self, maxkj: float = 25, cv: FloatArray | None = None
     ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        """Return coordinates, relative free energies, and propagated errors."""
         if cv is not None:
             x, H, E = self.get_pdf(cv)
         else:
@@ -133,6 +146,7 @@ class BlockAnalysis:
         return x[maxkj_ndx], F[maxkj_ndx], FE[maxkj_ndx]
 
     def get_av_err(self, cv: FloatArray | None = None) -> tuple[float, float]:
+        """Return the density-weighted average and its propagated error."""
         if cv is not None:
             x, H, E = self.get_pdf(cv)
         else:

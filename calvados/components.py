@@ -324,6 +324,7 @@ class Protein(Component):
         eps_yu: float,
         k_yu: float,
     ) -> None:
+        """Initialize scaled Lennard-Jones and Yukawa forces for Go restraints."""
         self.scLJ_pairlist: list[Any] = []
         self.scYU_pairlist: list[Any] = []
         self.scLJ = interactions.init_scaled_LJ(self.eps_lj, cutoff_lj)

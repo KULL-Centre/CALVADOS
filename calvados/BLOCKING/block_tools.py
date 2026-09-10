@@ -10,6 +10,7 @@ IntArray: TypeAlias = NDArray[np.int_]
 
 
 def blocker(array: FloatArray, multi: int = 1) -> tuple[int, IntArray, list[float]]:
+    """Return the sample count, valid block counts, and matching block sizes."""
     dimension = len(array)
     rep = dimension/multi
     n_blocks_try = np.arange([2 if multi==1 else multi][0],dimension+1)
@@ -26,6 +27,7 @@ def blocker(array: FloatArray, multi: int = 1) -> tuple[int, IntArray, list[floa
 
 
 def check(array: FloatArray, multi: int = 1) -> FloatArray:
+    """Trim replica tails until the data support enough blocking transforms."""
     nt = len( blocker(array, multi=multi)[1] )
     if nt > 19:
         return array
@@ -49,6 +51,11 @@ def check(array: FloatArray, multi: int = 1) -> FloatArray:
 
 
 def blocking(array: FloatArray, multi: int = 1) -> FloatArray:
+    """Estimate block errors for an unweighted observable.
+
+    Returns an ``(n, 3)`` array ordered from largest to smallest block size;
+    its columns are block size, standard error, and uncertainty of that error.
+    """
     
     u = array.mean()
     N, n_blocks, block_sizes = blocker(array, multi=multi)
@@ -80,6 +87,12 @@ def fblocking(
     multi: int = 1,
     interval: Sequence[float] | None = None,
 ) -> FloatArray:
+    """Estimate block errors for a weighted free-energy profile.
+
+    Returns an ``(n, 3)`` array ordered from largest to smallest block size;
+    its columns are block size, mean free-energy error, and uncertainty of
+    that error.
+    """
 
     N, n_blocks, block_sizes = blocker(cv, multi=multi)
     bounds = cast(Sequence[float], interval)
@@ -108,6 +121,7 @@ def fblocking(
 
 
 def autocorrelation(x: FloatArray) -> FloatArray:
+    """Return the normalized autocorrelation at every nonnegative lag."""
     n = len(x)
     variance = x.var()
     x = x-x.mean()

@@ -8,10 +8,12 @@ from .inputmodels import InputPath
 
 
 def xconv(x: NDArray[np.float64], N: int = 5) -> NDArray[np.float64]:
+    """Smooth an array with a centered moving-average convolution."""
     xf = np.convolve(x, np.ones(N)/N, mode='same')
     return xf
 
 def autocorr(x: NDArray[np.float64], norm: bool = True) -> NDArray[np.float64]:
+    """Calculate the nonnegative-lag autocorrelation of a one-dimensional array."""
     y = x.copy()
     if norm:
         x = (x - np.mean(x)) / (np.std(x) * len(x))
@@ -21,6 +23,7 @@ def autocorr(x: NDArray[np.float64], norm: bool = True) -> NDArray[np.float64]:
     return c
 
 def calc_runavg(xs: NDArray[np.float64], N: int = 10) -> NDArray[np.float64]:
+    """Calculate a NaN-aware running average over ``N`` neighbors per side."""
     xs_ravg = []
     for idx, x in enumerate(range(len(xs))):
         x0 = max(0,idx-N)
@@ -34,6 +37,7 @@ def write_entry(
     entry: Any,
     pdb_folder: InputPath,
     ) -> None:
+    """Write an AlphaFold database entry to a JSON metadata file."""
     with open(f'{pdb_folder}/{uniprot}_info.json','w') as f:
         json.dump(entry,f)
 
@@ -41,6 +45,7 @@ def load_ebi(
     uniprot: str,
     pdb_folder: InputPath,
 ) -> None:
+    """Download an AlphaFold structure, PAE matrix, and metadata from EBI."""
     os.system(f'mkdir -p {pdb_folder}')
     with os.popen(f'curl https://alphafold.ebi.ac.uk/api/prediction/{uniprot}') as f:
         entry = f.read()

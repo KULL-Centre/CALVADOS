@@ -28,15 +28,22 @@ def _split_steps(steps: int, max_batches: int = 10) -> list[int]:
 
 
 class Sim:
+    """Build and run a coarse-grained CALVADOS simulation.
+
+    The class validates configuration and component inputs, constructs the
+    OpenMM system and MDTraj topology, places every molecule, and applies the
+    requested bonded, nonbonded, restraint, equilibration, and reporting
+    settings. :meth:`build_system` prepares files and forces, and
+    :meth:`simulate` executes or resumes the trajectory.
+    """
+
     def __init__(
             self,
             path: InputPath,
             config: Mapping[str, Any],
             components: Mapping[str, Any],
         ) -> None:
-        """
-        simulate openMM Calvados;
-        parameters are provided by config dictionary """
+        """Validate inputs and initialize mutable simulation state."""
 
         self.path = Path(path)
         self.config: SimulationInput
@@ -74,6 +81,7 @@ class Sim:
             self.rcent = openmm.CustomExternalForce(self.config.ext_force_expr)
 
     def make_components(self) -> None:
+        """Instantiate components and initialize their properties and restraints."""
         self.components: list[Component] = [] # np.empty(0)
         self.use_restraints = False
 
@@ -126,6 +134,7 @@ class Sim:
                 self.comp_types.add(comp.params.molecule_type)
 
     def reorder_components(self) -> None:
+        """Place solute component types before lipids and crowders."""
         self.solute_types = ["protein", "rna", "cyclic", "seastar", "ptm_protein"]
         self.nsolutes = sum(
             self.nmols_per_comp_type.get(comp_type, 0)
@@ -461,6 +470,7 @@ class Sim:
             self.add_exclusions(exclusion_map)
 
     def add_custom_restraints(self, exclude_nonbonded: bool = True) -> None:
+        """Add configured custom restraints and optional nonbonded exclusions."""
         exclusion_map = []
         # self.custom_restr_pairs = []
         self.cres = interactions.init_restraints(self.config.custom_restraint_type)
@@ -473,6 +483,7 @@ class Sim:
             self.add_exclusions(exclusion_map)
 
     def add_exclusions(self, exclusion_map: list[Any]) -> None:
+        """Apply particle-pair exclusions to every relevant nonbonded force."""
         # exclude LJ, YU for restrained pairs
         for excl in exclusion_map:
             self.ah = interactions.add_exclusion(self.ah, excl[0], excl[1])
@@ -606,6 +617,7 @@ class Sim:
 
     @staticmethod
     def parse_custom_restraints(fcustom_restraints: InputPath) -> list[Any]:
+        """Parse custom-restraint records while preserving one-based indices."""
         custom_restraints: list[Any] = []
         with open(fcustom_restraints,'r') as f:
             for line in f.readlines():
@@ -854,6 +866,7 @@ def run(
         fconfig: InputPath = 'config.yaml',
         fcomponents: InputPath = 'components.yaml'
     ) -> Sim:
+    """Load YAML inputs, build and run a simulation, and return its driver."""
     with open(f'{path}/{fconfig}','r') as stream:
         config = safe_load(stream)
 
