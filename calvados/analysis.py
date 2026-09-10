@@ -1,6 +1,7 @@
 import os
 from collections.abc import Sequence
 from typing import Any, TypeAlias, cast
+import warnings
 
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
@@ -958,8 +959,9 @@ class SlabAnalysis:
         residues = pd.read_csv(residues_file, index_col=index_col)
 
         traj = md.load_dcd(
-            f'{self.input_path}/traj.dcd',
-            top=f'{self.input_path}/{self.input_pdb}')
+            f"{self.input_path}/{self.centered_dcd}",
+            top=f"{self.input_path}/{self.input_pdb}",
+        )[::step]
 
         chain_prop: dict[str, dict[str, Any]] = {}
         chain_name = cast(str, self.ref_name)
@@ -1214,11 +1216,16 @@ class SlabAnalysis:
         cutoffs_dense = np.array([res1.x[2]-pden*res1.x[3],-res2.x[2]+pden*res2.x[3]]) # position of interface - half width
         cutoffs_dilute = np.array([res1.x[2]+pdil*res1.x[3],-res2.x[2]-pdil*res2.x[3]]) # get far enough from interface for dilute phase calculation
 
+        ratio = abs(cutoffs_dilute[1] / cutoffs_dilute[0])
+        if not 0.5 <= ratio <= 2.0:
+            warnings.warn(
+                "The fitted slab interfaces are strongly asymmetric.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
         return cutoffs_dense, cutoffs_dilute
 
-        if (np.abs(cutoffs_dilute[1]/cutoffs_dilute[0]) > 2) or (np.abs(cutoffs_dilute[1]/cutoffs_dilute[0]) < 0.5): # ratio between right and left should be close to 1
-            print('NOT CONVERGED',cutoffs_dense,cutoffs_dilute)
-            print(res1.x,res2.x)
 
     @staticmethod
     def calc_block_errors(
@@ -1236,19 +1243,6 @@ class SlabAnalysis:
         edil = block_dil.sem
 
         return eden, edil
-
-# # @staticmethod
-# @nb.jit(nopython=True)
-# def calc_cos(a,b):
-
-#     dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
-
-#     la2 = a[0]**2 + a[1]**2 + a[2]**2
-#     lb2 = b[0]**2 + b[1]**2 + b[2]**2
-
-#     cos = dot / math.sqrt(la2 * lb2)
-#     # cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
-#     return cos
 
 def calc_com_traj(
     path: InputPath,

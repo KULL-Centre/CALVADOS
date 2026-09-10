@@ -43,7 +43,6 @@ class Component:
         self.params = params
         self.start_bead: int | None = None
 
-        self.comp_setup = "compact"
         self.dimensions: NDArray[np.float64] | None = None
 
         # read residue parameters from file

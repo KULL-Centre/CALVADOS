@@ -334,10 +334,10 @@ class Sim:
             self.system.addForce(self.cres)
             print(f'Number of custom restraints: {self.cres.getNumBonds()}')
 
-        # unit.barostat force
+        # barostat force
         if self.box_eq:
             assert self.config.pressure is not None
-            unit.barostat = openmm.MonteCarloAnisotropicBarostat(
+            barostat = openmm.MonteCarloAnisotropicBarostat(
                 [
                     self.config.pressure[0] * unit.bar,
                     self.config.pressure[1] * unit.bar,
@@ -349,12 +349,12 @@ class Sim:
                 self.config.boxscaling_xyz[2],
                 1000,
             )
-            self.system.addForce(unit.barostat)
+            self.system.addForce(barostat)
 
         # Bilayer eq. force
         if self.bilayer_eq:
             assert self.config.pressure is not None
-            unit.barostat = openmm.MonteCarloMembraneBarostat(
+            barostat = openmm.MonteCarloMembraneBarostat(
                 self.config.pressure[0] * unit.bar,
                 0.0 * unit.bar * unit.nanometer,
                 self.config.temp * unit.kelvin,
@@ -362,7 +362,7 @@ class Sim:
                 openmm.MonteCarloMembraneBarostat.ZFixed,
                 10000,
             )
-            self.system.addForce(unit.barostat)
+            self.system.addForce(barostat)
 
     def print_system_summary(self, write_xml: bool = True) -> None:
         """ Print system information and write xml. """
@@ -412,9 +412,9 @@ class Sim:
             xs_others = np.array(self.pos, dtype=float)
             xs = build.random_placement(self.box, xs_others, comp.xinit, ntries=ntries)
         for x in xs:
-            self.pos.append(float(x))
+            self.pos.append(x)
             self.nparticles += 1
-        return xs
+        return np.array(xs, dtype=np.float64)
 
     def place_bilayer(self, comp: Component, ntries: int = 10000) -> FloatArray:
         """
@@ -681,14 +681,14 @@ class Sim:
 
         if (self.restart_path.is_file()) and (self.config.restart == 'checkpoint'):
             if not os.path.isfile(f'{self.path}/{self.config.sysname:s}.dcd'):
-                raise Exception(
+                raise FileNotFoundError(
                     f'Did not find {self.path}/{self.config.sysname:s}.dcd trajectory to append to!'
                 )
             append = True
             print(f'Reading checkpoint file {self.restart_path}')
             print(f'Appending trajectory to {self.path}/{self.config.sysname:s}.dcd')
             print(f'Appending log file to {self.path}/{self.config.sysname:s}.log')
-            simulation.loadCheckpoint(self.restart_path)
+            simulation.loadCheckpoint(str(self.restart_path))
         else:
             if self.config.restart in ['pdb','cif']:
                 print(f'Reading in system configuration {self.restart_path}')
@@ -779,11 +779,11 @@ class Sim:
             if not self.config.pressure_coupling:
                 for index, force in enumerate(self.system.getForces()):
                     if isinstance(force, openmm.MonteCarloMembraneBarostat):
-                        print(f'Removing unit.barostat {index}')
+                        print(f'Removing barostat {index}')
                         self.system.removeForce(index)
                         break
                     if isinstance(force, openmm.MonteCarloAnisotropicBarostat):
-                        print(f'Removing unit.barostat {index}')
+                        print(f'Removing barostat {index}')
                         self.system.removeForce(index)
                         break
             for index, force in enumerate(self.system.getForces()):
@@ -838,16 +838,16 @@ class Sim:
         if self.config.runtime is not None: # in unit.hours
             simulation.runForClockTime(
                 self.config.runtime*unit.hour,
-                checkpointFile=self.restart_path,
+                checkpointFile=str(self.restart_path),
                 checkpointInterval=30*unit.minute,
             )
         else:
             assert self.config.steps is not None
             for batch in tqdm(_split_steps(self.config.steps), mininterval=1):
                 simulation.step(batch)
-                simulation.saveCheckpoint(self.restart_path)
+                simulation.saveCheckpoint(str(self.restart_path))
 
-        simulation.saveCheckpoint(self.restart_path)
+        simulation.saveCheckpoint(str(self.restart_path))
 
         now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")

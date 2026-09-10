@@ -107,6 +107,15 @@ class ComponentInput(BaseModel):
         ):
             raise ValueError("fdomains must be provided for harmonic restraints")
 
+        if self.restraint and (self.molecule_type in ["lipid", "cooke_lipid", "crowder"]):
+            raise ValueError(
+                "Restraints cannot be used for lipids or crowders"
+            )
+        if (self.molecule_type == "rna") and (self.restraint_type == "go"):
+            raise ValueError(
+                "RNA restraints can only be harmonic."
+            )
+        
         return self
 
 
@@ -231,6 +240,16 @@ class SimulationInput(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_pressure_coupling(self) -> Self:
+        """Prevent pressure coupling without equilibration."""
+        if self.pressure_coupling and not (self.box_eq or self.bilayer_eq):
+            raise ValueError(
+                "pressure_coupling requires box_eq or bilayer_eq"
+            )
+        return self
+
+
 
 class JobInput(BaseModel):
     """Validate settings used to render a cluster submission script.
@@ -300,21 +319,9 @@ def validate_inputs(
             "lipid and cooke_lipid components cannot both be present"
         )
 
-    for component in component_models.values():
-        if component.molecule_type in ["lipid", "cooke_lipid", "crowder"]:
-            if component.restraint:
-                raise ValueError(
-                    "Restraints cannot be used for lipids or crowders"
-                )
-        if (component.molecule_type == "rna") and (component.restraint_type == "go"):
-            raise ValueError(
-                "RNA restraints can only be harmonic."
-            )
-
-    if config_model.topol == "slab" and has_crowders:
-        if config_model.slab_outer is None:
-            raise ValueError(
-                "slab_outer must be provided for slab systems containing crowders"
-            )
+    if (config_model.slab_outer is None) and (config_model.topol == "slab" and has_crowders):
+        raise ValueError(
+            "slab_outer must be provided for slab systems containing crowders"
+        )
 
     return config_model, component_models
