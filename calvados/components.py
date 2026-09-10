@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 from numpy.typing import NDArray
+from typing import Any
 from openmm.openmm import Force
 from openmm.unit import (
     dimensionless,
@@ -31,6 +32,8 @@ class Component:
     This base class provides shared sequence, property, coordinate, and bond setup.
     """
 
+    comp_setup = "compact"
+
     def __init__(
             self,
             name: str,
@@ -44,14 +47,8 @@ class Component:
         self.dimensions: NDArray[np.float64] | None = None
 
         # read residue parameters from file
-        try:
-            self.residues = read_csv(self.params.fresidues).set_index("one")
-        except AttributeError:
-            raise FileNotFoundError(
-                f"Residue parameter file name (fresidues) not supplied to component {name}."
-            )
-        
-
+        self.residues = read_csv(self.params.fresidues).set_index("one")
+    
     def calc_comp_seq(self) -> None:
         """Calculate the component sequence."""
 
@@ -82,10 +79,21 @@ class Component:
         self.calc_comp_seq()
         self.nres = len(self.seq)
         self.nbeads = self.nres
-        self.sigmas = np.array([self.residues.loc[s].sigmas for s in self.seq])
-        self.lambdas = np.array([self.residues.loc[s].lambdas for s in self.seq])
-        self.bondlengths = np.array([self.residues.loc[s].bondlength for s in self.seq])
-        self.mws = np.array([self.residues.loc[s].MW for s in self.seq])
+        self.sigmas: NDArray[np.float64] = np.array(
+            [self.residues.loc[s].sigmas for s in self.seq],
+            dtype=np.float64,
+        )
+        self.lambdas: NDArray[np.float64] = np.array(
+            [self.residues.loc[s].lambdas for s in self.seq],
+            dtype=np.float64,
+        )
+        self.bondlengths: NDArray[np.float64] = np.array(
+            [self.residues.loc[s].bondlength for s in self.seq]
+        )
+        self.mws: NDArray[np.float64] = np.array(
+            [self.residues.loc[s].MW for s in self.seq],
+            dtype=np.float64
+        )
         self.qs, _ = get_qs(str(self.seq), flexhis=True, pH=pH, residues=self.residues)
         self.alphas = self.lambdas * self.params.alpha
         self.init_bond_force()
@@ -129,12 +137,12 @@ class Component:
 
     def calc_bondlength(self, i: int, j: int) -> float:
         """Calculate the equilibrium bond length between two beads."""
-        d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
+        d0 = 0.5 * float(self.bondlengths[i] + self.bondlengths[j])
         return d0
 
     def init_bond_force(self) -> None:
         """Initialize the harmonic bond force and its bond records."""
-        self.bond_pairlist = []
+        self.bond_pairlist: list[Any] = []
         self.hb = interactions.init_bonded_interactions()
 
     def add_bonds(self, offset: int) -> list[list[int]]:
@@ -269,18 +277,18 @@ class Protein(Component):
         cutoff_mix_in_LJYU: float = 0.15,
     ) -> float:
         """Calculate a protein bond length, including structural restraints."""
-        d0 = 0.5 * (self.bondlengths[i] + self.bondlengths[j])
+        d0 = 0.5 * float(self.bondlengths[i] + self.bondlengths[j])
         if self.params.restraint:
             if self.params.restraint_type == "harmonic":
                 ss = build.check_ssdomain(self.ssdomains, i, j, req_both=False)
-                d = self.dmap[i, j] if ss else d0
+                d = float(self.dmap[i, j]) if ss else d0
             elif self.params.restraint_type == "go":
                 if self.scale[i, j] < min_scale:
                     d = d0
                 elif self.scale[i, j] > cutoff_mix_in_LJYU:
-                    d = self.dmap[i, j]
+                    d = float(self.dmap[i, j])
                 else:
-                    d = (
+                    d = float(
                         self.bondscale[i, j] * d0
                         + (1.0 - self.bondscale[i, j]) * self.dmap[i, j]
                     )
@@ -305,7 +313,7 @@ class Protein(Component):
             raise ValueError("Protein restraint type must be harmonic or go.")
 
         self.cs = interactions.init_restraints(self.params.restraint_type)
-        self.restr_pairlist = []
+        self.restr_pairlist: list[Any] = []
 
     def init_scaled_nonbonded(
         self,
@@ -313,9 +321,9 @@ class Protein(Component):
         cutoff_yu: float,
         eps_yu: float,
         k_yu: float,
-    ):
-        self.scLJ_pairlist = []
-        self.scYU_pairlist = []
+    ) -> None:
+        self.scLJ_pairlist: list[Any] = []
+        self.scYU_pairlist: list[Any] = []
         self.scLJ = interactions.init_scaled_LJ(self.eps_lj, cutoff_lj)
         self.scYU = interactions.init_scaled_YU(eps_yu, k_yu, cutoff_yu)
 
@@ -407,12 +415,7 @@ class RNA(Component):
     RNA components include backbone bonds, angles, and neighboring-base forces.
     """
 
-    def __init__(self,
-            name: str,
-            params: ComponentInput,
-    ) -> None:
-        super().__init__(name, params)
-        self.comp_setup = "spiral"
+    comp_setup = "spiral"
 
     def calc_x_from_pdb(self) -> None:
         """Calculate RNA positions from a PDB structure."""
@@ -453,6 +456,8 @@ class RNA(Component):
     ) -> None:
         """Calculate RNA properties and initial coordinates."""
 
+        self.eps_lj = eps_lj
+
         self.calc_comp_seq()  # --> seq and seq2
         self.nres = len(self.seq)
         self.nbeads = len(self.seq2)
@@ -482,7 +487,7 @@ class RNA(Component):
         """Initialize RNA bond and neighboring-base forces."""
         self.bond_pairlist = []
         self.hb = interactions.init_bonded_interactions()
-        self.basebase_pairlist = []
+        self.basebase_pairlist: list[Any] = []
         self.scLJ_rna = interactions.init_scaled_LJ(
             self.eps_lj,
             self.params.rna_nb_cutoff
@@ -490,7 +495,7 @@ class RNA(Component):
 
     def init_angle_force(self) -> None:
         """Initialize the RNA angle force and its angle records."""
-        self.angle_list = []
+        self.angle_list: list[Any] = []
         self.ha = interactions.init_angles()
 
     def get_forces(self) -> None:
@@ -529,11 +534,11 @@ class RNA(Component):
 
     def calc_bondlength(self, i: int, j: int) -> float:
         """Calculate an RNA bond length, including structural restraints."""
-        d0 = self.bondlengths[j]
+        d0 = float(self.bondlengths[j])
         if self.params.restraint:
             if self.params.restraint_type == "harmonic":
                 ss = build.check_ssdomain(self.ssdomains, i, j, req_both=False)
-                d = self.dmap[i, j] if ss else d0
+                d = float(self.dmap[i, j]) if ss else d0
             else:
                 raise ValueError("Restraint type must be harmonic.")
         else:
@@ -561,7 +566,11 @@ class RNA(Component):
         for i in range(0, nbeads - 4, 2):
             v1 = pos[i] - pos[i + 2]
             v2 = pos[i + 4] - pos[i + 2]
-            cos = np.dot(v1, v2) / np.linalg.norm(v1) / np.linalg.norm(v2)
+            v1_length = np.linalg.norm(v1)
+            v2_length = np.linalg.norm(v2)
+            if (v1_length == 0.0) or (v2_length == 0.0):
+                raise ValueError("Edge length for angle calculation is zero.")
+            cos = np.dot(v1, v2) / v1_length / v2_length
             cos = np.clip(cos, -1.0, 1.0)
             angmap[i] = np.arccos(cos)
         self.angmap = angmap
@@ -691,7 +700,7 @@ class RNA(Component):
     def init_restraint_force(self) -> None:
         """Initialize the RNA restraint force and its pair records."""
         self.cs = interactions.init_restraints(self.params.restraint_type)
-        self.restr_pairlist = []
+        self.restr_pairlist: list[Any] = []
 
     def restraint_check(self, i: int, j: int) -> bool:
         """Return whether a bead pair is eligible for a restraint."""
@@ -775,30 +784,25 @@ class Lipid(Component):
     Both harmonic-angle and Cooke-style lipid force variants are supported.
     """
 
-    def __init__(self,
-            name: str,
-            params: ComponentInput,
-    ) -> None:
-        super().__init__(name, params)
-        self.comp_setup = "linear"
+    comp_setup = "linear"
 
     def calc_properties(
-        self, pH: float = 7.0, verbose: bool = False, eps_lj = 0.2,
-    ):
+        self, pH: float = 7.0, verbose: bool = False, eps_lj: float = 0.2,
+    ) -> None:
         """Calculate lipid properties and initial coordinates."""
 
         super().calc_properties(pH=pH, verbose=verbose, eps_lj=eps_lj)
         self.calc_x_setup()  # can be overwritten in custom component
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two lipid beads share a bond or angle."""
 
         condition = (j == i + 1) or (j == i + 2)
         return condition
 
-    def init_bond_force(self):
+    def init_bond_force(self) -> None:
         """Initialize the forces required by the selected lipid model."""
-        self.bond_pairlist = []
+        self.bond_pairlist: list[Any] = []
         if self.params.molecule_type == "lipid":
             self.hb = interactions.init_bonded_interactions()
             self.ha = interactions.init_angles()
@@ -806,9 +810,9 @@ class Lipid(Component):
             self.hb = interactions.init_bonded_interactions()
             self.wcafene = interactions.init_wcafene(self.eps_lj)
 
-    def add_bonds(self, offset):
+    def add_bonds(self, offset: int) -> list[Any]:
         """Add lipid bonds and angles and return nonbonded exclusions."""
-        exclusion_map = []  # for ah, yu etc.
+        exclusion_map: list[Any] = []  # for ah, yu etc.
         for i in range(0, self.nbeads - 1):
             for j in range(i, self.nbeads):
                 if self.bond_check(i, j):
@@ -864,7 +868,7 @@ class Lipid(Component):
                             )
         return exclusion_map
 
-    def get_forces(self):
+    def get_forces(self) -> None:
         """Collect the forces required by the selected lipid model."""
         self.forces: list[Force] = [self.hb]
         if self.params.molecule_type == "lipid":
@@ -883,13 +887,13 @@ class Crowder(Component):
 
     def calc_properties(
         self, pH: float = 7.0, verbose: bool = False, eps_lj: float = 0.2,
-    ):
+    ) -> None:
         """Calculate crowder properties and initial coordinates."""
 
         super().calc_properties(pH=pH, verbose=verbose, eps_lj=eps_lj)
         self.calc_x_setup()  # can be overwritten in custom component
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two crowder beads should be bonded."""
 
         condition = j == i + 1
@@ -901,7 +905,7 @@ class Cyclic(Protein):
     The final bead is bonded back to the first bead to close the chain.
     """
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two cyclic-chain beads should be bonded."""
 
         condition0 = j == i + 1
@@ -911,27 +915,49 @@ class Cyclic(Protein):
 
 
 class Seastar(Protein):
-    """Represent a star-shaped branched protein or peptide.
+    """Represent a star-shaped branched protein or peptide."""
 
-    Branches extend from the first bead according to the configured end count.
-    """
+    def calc_comp_seq(self) -> None:
+        """Read the sequence and determine the start of each branch."""
+        super().calc_comp_seq()
 
-    def bond_check(self, i: int, j: int):
-        """Return whether two branched-chain beads should be bonded."""
+        if self.params.n_ends <= 2:
+            self.branch_starts: set[int] = set()
+            return
 
-        if self.params.n_ends in [0, 1, 2]:
+        n_branch_beads = len(self.seq) - 1
+
+        if self.params.n_ends > n_branch_beads:
+            raise ValueError(
+                f"Seastar {self.name!r} requests {self.params.n_ends} branches, "
+                f"but only has {n_branch_beads} branch beads."
+            )
+
+        base_length, remainder = divmod(
+            n_branch_beads,
+            self.params.n_ends,
+        )
+
+        branch_lengths = [
+            base_length + (branch < remainder)
+            for branch in range(self.params.n_ends)
+        ]
+
+        self.branch_starts = set()
+        start = 1
+        for branch_length in branch_lengths:
+            self.branch_starts.add(start)
+            start += branch_length
+
+    def bond_check(self, i: int, j: int) -> bool:
+        """Return whether two beads are connected in the star topology."""
+        if self.params.n_ends <= 2:
             return super().bond_check(i, j)
-        else:
-            if (self.nbeads - 1) % self.params.n_ends == 0:
-                branch_length = int((self.nbeads - 1) / self.params.n_ends)
-            else:
-                branch_length = int((self.nbeads - 1) / self.params.n_ends) + 1
 
-            condition0 = (j == i + 1) and ((j - 1) % branch_length != 0)
-            condition1 = (i == 0) and ((j - 1) % branch_length == 0)
+        center_to_branch = i == 0 and j in self.branch_starts
+        within_branch = j == i + 1 and j not in self.branch_starts
 
-            condition = condition0 or condition1
-            return condition
+        return center_to_branch or within_branch
 
 
 class PTMProtein(Protein):
@@ -940,7 +966,7 @@ class PTMProtein(Protein):
     PTM sequences are appended as branches at configured protein residues.
     """
 
-    def calc_comp_seq(self):
+    def calc_comp_seq(self) -> None:
         """Calculate the combined protein and PTM sequence."""
 
         assert self.params.ffasta is not None
@@ -960,7 +986,7 @@ class PTMProtein(Protein):
         self.n_termini = [0]
         self.c_termini = [len(self.seq) - 1]
 
-    def bond_check(self, i: int, j: int):
+    def bond_check(self, i: int, j: int) -> bool:
         """Return whether two protein or PTM beads should be bonded."""
 
         # residue-residue bond (protein)

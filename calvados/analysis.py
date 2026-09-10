@@ -1,34 +1,29 @@
-import numpy as np
-import numba as nb
-import pandas as pd
-
-import MDAnalysis as mda
-from MDAnalysis import Merge, transformations
-
-from MDAnalysis.analysis import distances, rms
-from MDAnalysis.analysis.align import AlignTraj
-
-import mdtraj as md
-
-from tqdm import tqdm
-
-from scipy.optimize import curve_fit, least_squares
-from scipy.stats import sem
-
-from calvados.build import get_ssdomains
-
-import matplotlib.pyplot as plt
-
 import math
-
-from Bio import SeqUtils
-
 import os
 import sys
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import MDAnalysis as mda
+import mdtraj as md
+import numba as nb
+import numpy as np
+import pandas as pd
+from Bio import SeqUtils
+from MDAnalysis import Merge, transformations
+from MDAnalysis.analysis import distances, rms
+from MDAnalysis.analysis.align import AlignTraj
+from numpy.typing import NDArray
+from scipy.optimize import curve_fit, least_squares
+from scipy.stats import sem
+from tqdm import tqdm
+
+from calvados.build import get_ssdomains
+
 PACKAGEDIR = Path(__file__).parent.absolute()
 sys.path.append(f'{str(PACKAGEDIR):s}/BLOCKING')
 from main import BlockAnalysis
+
 
 def center_traj(pdb,traj,start=None,stop=None,step=1):
     """ Center trajectory """
@@ -120,7 +115,7 @@ def calc_raw_dmap(pos0,pos1):
     dmap = distances.distance_array(pos0,pos1)
     return dmap
 
-def self_distances(pos,box=None):
+def self_distances(pos,box=None) -> NDArray:
     """ Self distance map for matrix of positions
 
     If box dimensions are provided, distances are
