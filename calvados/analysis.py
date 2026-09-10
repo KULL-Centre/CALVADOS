@@ -974,7 +974,7 @@ class SlabAnalysis:
         seq = [res.name for res in traj.top.chain(chainids[0]).residues]
         if len(seq[0]) == 1:
             seq = [SeqUtils.seq3(res).upper() for res in seq]  # type: ignore[no-untyped-call]
-        mws = residues.loc[seq,'MW'].values
+        mws = residues.loc[seq, 'MW'].to_numpy(copy=True)
         mws[0] += 2
         mws[-1] += 16
         print(mws)

@@ -167,6 +167,28 @@ def test_validate_inputs_rejects_malformed_component_sections() -> None:
             },
             "ffasta must be provided for ptm_protein components",
         ),
+        (
+            {
+                "name": "lipid",
+                "molecule_type": "lipid",
+                "fresidues": "residues.csv",
+                "restraint": True,
+                "pdb_folder": "pdbs",
+                "fdomains": "domains.yaml",
+            },
+            "Restraints cannot be used for lipids or crowders",
+        ),
+        (
+            {
+                "name": "rna",
+                "molecule_type": "rna",
+                "fresidues": "residues.csv",
+                "restraint": True,
+                "restraint_type": "go",
+                "pdb_folder": "pdbs",
+            },
+            "RNA restraints can only be harmonic",
+        ),
     ],
 )
 def test_component_input_requires_compatible_input_sources(
@@ -237,6 +259,19 @@ def test_simulation_input_resolves_one_duration() -> None:
 def test_simulation_input_requires_pressure(setting: dict) -> None:
     with pytest.raises(ValidationError, match="pressure must be provided"):
         SimulationInput.model_validate(simulation_input(**setting))
+
+
+def test_pressure_coupling_requires_equilibration() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="pressure_coupling requires box_eq or bilayer_eq",
+    ):
+        SimulationInput.model_validate(
+            simulation_input(
+                pressure_coupling=True,
+                pressure=(1, 1, 1),
+            )
+        )
 
 
 def test_simulation_input_validates_box_equilibration() -> None:

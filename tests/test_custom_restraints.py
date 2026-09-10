@@ -14,11 +14,11 @@ TEST_DATA = Path(__file__).parent / "data"
 def test_maps_custom_restraints_across_multiple_components() -> None:
     simulation = sim.Sim.__new__(sim.Sim)
     simulation.components = [
-        SimpleNamespace(name="A", nmol=2, nbeads=3),
-        SimpleNamespace(name="B", nmol=1, nbeads=4),
-        SimpleNamespace(name="C", nmol=2, nbeads=5),
+        SimpleNamespace(name="A", params=SimpleNamespace(nmol=2), nbeads=3),
+        SimpleNamespace(name="B", params=SimpleNamespace(nmol=1), nbeads=4),
+        SimpleNamespace(name="C", params=SimpleNamespace(nmol=2), nbeads=5),
     ]
-    simulation.fcustom_restraints = "unused.txt"
+    simulation.config = SimpleNamespace(fcustom_restraints="unused.txt")
     simulation.parse_custom_restraints = lambda _: [
         [["B", 1, 4], ["C", 2, 1], "1.0", "700.0"]
     ]
@@ -44,8 +44,10 @@ def test_rejects_invalid_custom_restraint_endpoint(
     message: str,
 ) -> None:
     simulation = sim.Sim.__new__(sim.Sim)
-    simulation.components = [SimpleNamespace(name="A", nmol=2, nbeads=3)]
-    simulation.fcustom_restraints = "unused.txt"
+    simulation.components = [
+        SimpleNamespace(name="A", params=SimpleNamespace(nmol=2), nbeads=3)
+    ]
+    simulation.config = SimpleNamespace(fcustom_restraints="unused.txt")
     simulation.parse_custom_restraints = lambda _: [
         [endpoint, ["A", 1, 1], "1.0", "700.0"]
     ]
@@ -128,6 +130,7 @@ def test_cres(name, tmp_path: Path):
     steps = N_frames*N_save, # number of simulation steps
     platform = 'CPU', # or CUDA
     restart = None,
+    frestart = "custom-restart.chk",
     verbose = True,
     report_potential_energy = False, # True,
     random_number_seed = 12345,
@@ -156,6 +159,9 @@ def test_cres(name, tmp_path: Path):
     components.write(path,name='components.yaml')
 
     sim.run(path=path,fconfig='config.yaml',fcomponents='components.yaml')
+
+    assert (path / "custom-restart.chk").is_file()
+    assert not (path / "restart.chk").exists()
 
     system = openmm.XmlSerializer.deserialize(
         (path / f"{sysname}.xml").read_text()

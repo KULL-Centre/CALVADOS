@@ -1,8 +1,10 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from calvados import components as components_module
 from calvados.cfg import Components, Config
 from calvados.components import Protein, RNA
 from calvados.sim import Sim
@@ -60,3 +62,39 @@ def test_rna_angle_map_clips_cosine() -> None:
     rna.calc_angmap()
 
     assert rna.angmap[0] == pytest.approx(0.0)
+
+
+def test_restrained_rna_uses_cif_structure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cif_path = tmp_path / "rna.cif"
+    cif_path.touch()
+    loaded_paths: list[str] = []
+
+    def read_structure(path: str) -> tuple[str, list[int], list[int]]:
+        loaded_paths.append(path)
+        return "AA", [0], [1]
+
+    monkeypatch.setattr(
+        components_module,
+        "seq_from_pdb",
+        read_structure,
+    )
+    monkeypatch.setattr(
+        components_module.build,
+        "get_ssdomains",
+        lambda *_: [],
+    )
+
+    rna = RNA.__new__(RNA)
+    rna.name = "rna"
+    rna.params = SimpleNamespace(
+        restraint=True,
+        pdb_folder=tmp_path,
+        fdomains=tmp_path / "domains.yaml",
+    )
+
+    rna.calc_comp_seq()
+
+    assert loaded_paths == [str(cif_path)]
