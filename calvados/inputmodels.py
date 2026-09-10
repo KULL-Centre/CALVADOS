@@ -278,6 +278,17 @@ def validate_inputs(
             "lipid and cooke_lipid components cannot both be present"
         )
 
+    for component in component_models.values():
+        if component.molecule_type in ["lipid", "cooke_lipid", "crowder"]:
+            if component.restraint:
+                raise ValueError(
+                    "Restraints cannot be used for lipids or crowders"
+                )
+        if (component.molecule_type == "rna") and (component.restraint_type == "go"):
+            raise ValueError(
+                "RNA restraints can only be harmonic."
+            )
+
     if config_model.topol == "slab" and has_crowders:
         if config_model.slab_outer is None:
             raise ValueError(

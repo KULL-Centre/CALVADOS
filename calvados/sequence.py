@@ -134,7 +134,7 @@ def patch_terminal_qs(
     qs: FloatArray,
     n_termini: Sequence[int] | NDArray[np.int64],
     c_termini: Sequence[int] | NDArray[np.int64],
-    loc: Literal["N", "C", "both"] = "both",
+    loc: Literal["N", "C", "both", "none"] = "both",
 ) -> FloatArray:
     """Add charges to selected N- and C-termini."""
     qsnew = qs.copy()
@@ -150,7 +150,7 @@ def patch_terminal_mws(
     mws: FloatArray,
     n_termini: Sequence[int] | NDArray[np.int64],
     c_termini: Sequence[int] | NDArray[np.int64],
-    loc: Literal["N", "C", "both"] = "both",
+    loc: Literal["N", "C", "both", "none"] = "both",
 ) -> FloatArray:
     """Add terminal hydrogen and oxygen masses to residue masses."""
     mwsnew = mws.copy()

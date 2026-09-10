@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from json import load
 from os import PathLike
-from typing import Literal
+from typing import TypeAlias, Literal
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
@@ -14,6 +14,7 @@ from scipy import constants
 from yaml import safe_load
 
 from .sequence import calc_mw
+from .inputmodels import InputPath
 
 ################ SYSTEM BUILDING FUNCTIONS ################
 
@@ -308,7 +309,7 @@ def build_xyzgrid(N: int | float, box: NDArray[np.float64]) -> NDArray[np.float6
 
 # FOLDED
 def geometry_from_pdb(
-    pdb: str | PathLike[str], use_com: bool = False
+    pdb: InputPath, use_com: bool = False
 ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
     """Return protein coordinates and box lengths converted from Å to nm."""
     pdb = str(pdb)
@@ -335,7 +336,7 @@ def geometry_from_pdb(
 
 
 def geometry_from_pdb_rna(
-    pdb: str | PathLike[str], use_com: bool = False
+    pdb: InputPath, use_com: bool = False
 ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
     """Return RNA coordinates and box lengths converted from Å to nm."""
     backbone_atoms_name = [
@@ -396,7 +397,7 @@ def geometry_from_pdb_rna(
 
 
 def bfac_from_pdb(
-    pdb: str | PathLike[str], confidence: float = 70.0
+    pdb: InputPath, confidence: float = 70.0
 ) -> NDArray[np.float64]:
     """Return residue-averaged pLDDT values above a confidence threshold."""
     with catch_warnings():
@@ -410,7 +411,7 @@ def bfac_from_pdb(
 
 
 def load_pae_inv(
-    input_pae: str | PathLike[str],
+    input_pae: InputPath,
     cutoff: float = 0.1,
     colabfold: Literal[0, 1, 2] = 0,
     symmetrize: bool = True,
@@ -424,7 +425,7 @@ def load_pae_inv(
 
 
 def load_pae(
-    input_pae: str | PathLike[str],
+    input_pae: InputPath,
     colabfold: Literal[0, 1, 2] = 0,
     symmetrize: bool = True,
 ) -> NDArray:
@@ -445,7 +446,7 @@ def load_pae(
 
 
 def get_ssdomains(
-    name: str, fdomains: str | PathLike[str], dpam: bool = False
+    name: str, fdomains: InputPath, dpam: bool = False
 ) -> list[list[int]]:
     """Load structured domains and convert residue indices to zero-based."""
     if dpam:

@@ -1,15 +1,21 @@
 import os
-from os import PathLike
 
 import numpy as np
 from numpy.typing import NDArray
-from openmm import unit
+from openmm.openmm import Force
+from openmm.unit import (
+    dimensionless,
+    kilojoules_per_mole,
+    nanometer,  # pyright: ignore[reportAttributeAccessIssue]
+    radian,
+)
 from pandas import read_csv
 from scipy.special import expit
 
 from calvados import build, interactions
 
 from .analysis import self_distances
+from .inputmodels import ComponentInput, InputPath
 from .sequence import (
     get_qs,
     patch_terminal_mws,
@@ -17,7 +23,6 @@ from .sequence import (
     read_fasta,
     seq_from_pdb,
 )
-from .inputmodels import ComponentInput
 
 
 class Component:
@@ -34,8 +39,6 @@ class Component:
         """Initialize a component from explicit and default properties."""
         self.name = name
         self.params = params
-
-        self.molecule_type: str = self.params.molecule_type
 
         self.comp_setup = "compact"
         self.dimensions: NDArray[np.float64] | None = None
@@ -74,6 +77,8 @@ class Component:
         ) -> None:
         """Calculate bead properties for the component."""
 
+        self.eps_lj = eps_lj
+
         self.calc_comp_seq()
         self.nres = len(self.seq)
         self.nbeads = self.nres
@@ -88,6 +93,10 @@ class Component:
     def calc_dmap(self) -> None:
         """Calculate the intracomponent distance map."""
         if self.params.periodic:
+            if self.dimensions is None:
+                raise ValueError(
+                    "periodic=True with no cell dimensions in input structure"
+                )
             self.dmap = self_distances(self.xinit, self.dimensions)
         else:
             self.dmap = self_distances(self.xinit)
@@ -108,6 +117,10 @@ class Component:
         else:
             self.xinit = build.build_linear(
                 self.bondlengths, n_per_res=n_per_res, ys=ys
+            )
+        if len(self.xinit) != self.nbeads:
+            raise ValueError(
+                "Length of positions != number of beads"
             )
 
     def bond_check(self, i: int, j: int) -> bool:
@@ -134,8 +147,8 @@ class Component:
                     bidx = self.hb.addBond(
                         i + offset,
                         j + offset,
-                        d * unit.nanometer,
-                        self.params.kb * unit.kilojoules_per_mole / (unit.nanometer**2),
+                        d * nanometer,
+                        self.params.kb * kilojoules_per_mole / (nanometer**2),
                     )
                     self.bond_pairlist.append(
                         [i + offset + 1, j + offset + 1, bidx, d, self.params.kb]
@@ -147,7 +160,7 @@ class Component:
         """Collect the component forces that belong in the system."""
         self.forces = [self.hb]
 
-    def write_bonds(self, path: str | PathLike[str]) -> None:
+    def write_bonds(self, path: InputPath) -> None:
         """Write bond records to a file."""
 
         with open(f"{path}/bonds_{self.name}.txt", "w") as f:
@@ -165,7 +178,7 @@ class Protein(Component):
     """
 
     @staticmethod
-    def get_input_structure_file(pdb_folder: str | PathLike[str], name: str) -> str:
+    def get_input_structure_file(pdb_folder: InputPath, name: str) -> str:
         """Return the available CIF or PDB structure filename."""
         pdb_file = f"{pdb_folder}/{name}.pdb"
         cif_file = f"{pdb_folder}/{name}.cif"
@@ -175,7 +188,9 @@ class Protein(Component):
         elif os.path.isfile(pdb_file):
             return pdb_file
         else:
-            raise ValueError("Input structure file must be of type pdb or cif")
+            raise FileNotFoundError("" \
+            f"Neither structure file {cif_file} nor {pdb_file} found."
+            )
 
     def calc_x_from_pdb(self) -> None:
         """Load protein coordinates from a PDB or CIF structure."""
@@ -283,7 +298,7 @@ class Protein(Component):
         return condition and condition_termini
 
     def init_restraint_force(
-        self, eps_lj=None, cutoff_lj=None, cutoff_yu=None, eps_yu=None, k_yu=None
+        self,
     ) -> None:
         """Initialize protein restraint forces and their pair records."""
         if self.params.restraint_type not in ["harmonic", "go"]:
@@ -291,11 +306,18 @@ class Protein(Component):
 
         self.cs = interactions.init_restraints(self.params.restraint_type)
         self.restr_pairlist = []
-        if self.params.restraint_type == "go":
-            self.scLJ_pairlist = []
-            self.scYU_pairlist = []
-            self.scLJ = interactions.init_scaled_LJ(eps_lj, cutoff_lj)
-            self.scYU = interactions.init_scaled_YU(eps_yu, k_yu, cutoff_yu)
+
+    def init_scaled_nonbonded(
+        self,
+        cutoff_lj: float,
+        cutoff_yu: float,
+        eps_yu: float,
+        k_yu: float,
+    ):
+        self.scLJ_pairlist = []
+        self.scYU_pairlist = []
+        self.scLJ = interactions.init_scaled_LJ(self.eps_lj, cutoff_lj)
+        self.scYU = interactions.init_scaled_YU(eps_yu, k_yu, cutoff_yu)
 
     def add_restraints(
         self,
@@ -333,7 +355,8 @@ class Protein(Component):
                                 self.scYU, i, j, offset, self
                             )
                             self.scYU_pairlist.append(scaled_pair)
-
+                else:
+                    raise ValueError("restraint_type must be harmonic or go")
                 self.cs, restr_pair = interactions.add_single_restraint(
                     self.cs,
                     self.params.restraint_type,
@@ -346,7 +369,7 @@ class Protein(Component):
                 exclusion_map.append([i + offset, j + offset])
         return exclusion_map
 
-    def write_restraints(self, path: str | PathLike[str]) -> None:
+    def write_restraints(self, path: InputPath) -> None:
         """Write protein restraint records to files."""
 
         with open(f"{path}/restr_{self.name}.txt", "w") as f:
@@ -371,7 +394,7 @@ class Protein(Component):
 
     def get_forces(self) -> None:
         """Collect protein bond and restraint forces for the system."""
-        self.forces = [self.hb]
+        self.forces: list[Force] = [self.hb]
         if self.params.restraint:
             self.forces.append(self.cs)
             if self.params.restraint_type == "go":
@@ -393,13 +416,25 @@ class RNA(Component):
 
     def calc_x_from_pdb(self) -> None:
         """Calculate RNA positions from a PDB structure."""
+
         pdb_file = f"{self.params.pdb_folder}/{self.name}.pdb"
+        cif_file = f"{self.params.pdb_folder}/{self.name}.cif"
+
+        if os.path.isfile(cif_file):
+            struct_file = cif_file
+        elif os.path.isfile(pdb_file):
+            struct_file = pdb_file
+        else:
+            raise FileNotFoundError(
+                "Cannot find input PDB/CIF file for RNA"
+            )
         self.xinit, self.dimensions = build.geometry_from_pdb_rna(
-            pdb_file, use_com=self.params.use_com
-        )  # read from pdb
+            struct_file, use_com=self.params.use_com
+        )
 
     def calc_ssdomains(self) -> None:
         """Map harmonic-restraint domains from residues to RNA beads."""
+        assert self.params.fdomains is not None
         seq_ssdomains = build.get_ssdomains(self.name, self.params.fdomains)
         ssdomains_bead = []
         for seq_ssdomain in seq_ssdomains:
@@ -440,15 +475,18 @@ class RNA(Component):
         else:
             self.calc_x_setup(d=0.59, n_per_res=2)
 
-        self.init_bond_force(eps_lj=eps_lj)
+        self.init_bond_force()
         self.init_angle_force()
 
-    def init_bond_force(self, eps_lj: float = 0.2) -> None:
+    def init_bond_force(self) -> None:
         """Initialize RNA bond and neighboring-base forces."""
         self.bond_pairlist = []
         self.hb = interactions.init_bonded_interactions()
         self.basebase_pairlist = []
-        self.scLJ_rna = interactions.init_scaled_LJ(eps_lj, self.params.rna_nb_cutoff)
+        self.scLJ_rna = interactions.init_scaled_LJ(
+            self.eps_lj,
+            self.params.rna_nb_cutoff
+        )
 
     def init_angle_force(self) -> None:
         """Initialize the RNA angle force and its angle records."""
@@ -597,24 +635,24 @@ class RNA(Component):
                     bidx = self.hb.addBond(
                         i + offset,
                         j + offset,
-                        d * unit.nanometer,
-                        rna_kb * unit.kilojoules_per_mole / (unit.nanometer**2),
+                        d * nanometer,
+                        rna_kb * kilojoules_per_mole / (nanometer**2),
                     )
                     exclusion_map.append([i + offset, j + offset])
                     self.bond_pairlist.append(
                         [i + offset + 1, j + offset + 1, bidx, d, rna_kb]
                     )
                 if self.basebase_check(i, j):  # restrain neighboring bases
-                    sig = self.calc_rna_nb_sigma_length(i, j)
-                    lam = (self.lambdas[i] + self.lambdas[j]) / 2.0
+                    sig: float = self.calc_rna_nb_sigma_length(i, j)
+                    lam: float = (self.lambdas[i] + self.lambdas[j]) / 2.0
                     n = self.params.rna_nb_scale
                     bidx = self.scLJ_rna.addBond(
                         i + offset,
                         j + offset,
                         [
-                            sig * unit.nanometer,
-                            lam * unit.dimensionless,
-                            n * unit.dimensionless,
+                            sig * nanometer,
+                            lam * dimensionless, # pyright: ignore[reportOperatorIssue]
+                            n * dimensionless, # pyright: ignore[reportOperatorIssue]
                         ],
                     )
                     self.basebase_pairlist.append(
@@ -634,8 +672,8 @@ class RNA(Component):
                         i + offset,
                         i + 2 + offset,
                         i + 4 + offset,
-                        rna_pa * unit.radian,
-                        self.params.rna_ka * unit.kilojoules_per_mole / (unit.radian**2),
+                        rna_pa * radian, # pyright: ignore[reportOperatorIssue]
+                        self.params.rna_ka * kilojoules_per_mole / (radian**2),
                     )
                     self.angle_list.append(
                         [
@@ -650,9 +688,7 @@ class RNA(Component):
                     exclusion_map.append([i + offset, j + offset])
         return exclusion_map
 
-    def init_restraint_force(
-        self, eps_lj=None, cutoff_lj=None, eps_yu=None, k_yu=None
-    ) -> None:
+    def init_restraint_force(self) -> None:
         """Initialize the RNA restraint force and its pair records."""
         self.cs = interactions.init_restraints(self.params.restraint_type)
         self.restr_pairlist = []
@@ -676,7 +712,7 @@ class RNA(Component):
         exclusion_map = []  # for ah, yu etc.
         for i in range(self.nbeads - 2):
             for j in range(i + 2, self.nbeads):
-                if self.params.restraint_check(i, j):
+                if self.restraint_check(i, j):
                     # check if below cutoff
                     if self.dmap[i, j] > self.params.cutoff_restr:
                         continue
@@ -700,7 +736,7 @@ class RNA(Component):
                         raise ValueError("RNA restraint type must be harmonic.")
         return exclusion_map
 
-    def write_bonds(self, path: str | PathLike[str]) -> None:
+    def write_bonds(self, path: InputPath) -> None:
         """Write RNA bond, neighboring-base, and angle records to files."""
 
         with open(f"{path}/bonds_{self.name}.txt", "w") as f:
@@ -724,7 +760,7 @@ class RNA(Component):
                     f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{int(b[3])}\t{b[4]:.4f}\t{b[5]:.4f}\n"
                 )
 
-    def write_restraints(self, path: str | PathLike[str]) -> None:
+    def write_restraints(self, path: InputPath) -> None:
         """Write RNA restraint records to a file."""
 
         with open(f"{path}/restr_{self.name}.txt", "w") as f:
@@ -754,24 +790,23 @@ class Lipid(Component):
         super().calc_properties(pH=pH, verbose=verbose, eps_lj=eps_lj)
         self.calc_x_setup()  # can be overwritten in custom component
 
-    @staticmethod
-    def bond_check(i: int, j: int):
+    def bond_check(self, i: int, j: int):
         """Return whether two lipid beads share a bond or angle."""
 
         condition = (j == i + 1) or (j == i + 2)
         return condition
 
-    def init_bond_force(self, eps_lj = 0.2):
+    def init_bond_force(self):
         """Initialize the forces required by the selected lipid model."""
         self.bond_pairlist = []
-        if self.molecule_type == "lipid":
+        if self.params.molecule_type == "lipid":
             self.hb = interactions.init_bonded_interactions()
             self.ha = interactions.init_angles()
-        elif self.molecule_type == "cooke_lipid":
+        elif self.params.molecule_type == "cooke_lipid":
             self.hb = interactions.init_bonded_interactions()
-            self.wcafene = interactions.init_wcafene(eps_lj)
+            self.wcafene = interactions.init_wcafene(self.eps_lj)
 
-    def add_bonds(self, offset, eps_lj = 0.2):
+    def add_bonds(self, offset):
         """Add lipid bonds and angles and return nonbonded exclusions."""
         exclusion_map = []  # for ah, yu etc.
         for i in range(0, self.nbeads - 1):
@@ -779,40 +814,40 @@ class Lipid(Component):
                 if self.bond_check(i, j):
                     d = self.calc_bondlength(i, j)
                     if j - i == 1:
-                        if self.molecule_type == "cooke_lipid":
-                            kfene = 30 * 3 * eps_lj / d / d
+                        if self.params.molecule_type == "cooke_lipid":
+                            kfene = 30 * 3 * self.eps_lj / d / d
                             bidx = self.wcafene.addBond(
                                 i + offset,
                                 j + offset,
                                 [
-                                    d * unit.nanometer,
+                                    d * nanometer,
                                     kfene
-                                    * unit.kilojoules_per_mole
-                                    / (unit.nanometer**2),
+                                    * kilojoules_per_mole
+                                    / (nanometer**2),
                                 ],
                             )
                             self.bond_pairlist.append(
                                 [i + offset + 1, j + offset + 1, bidx, d, kfene]
                             )  # 1-based
-                        elif self.molecule_type == "lipid":
+                        elif self.params.molecule_type == "lipid":
                             bidx = self.hb.addBond(
                                 i + offset,
                                 j + offset,
-                                d * unit.nanometer,
-                                1700 * unit.kilojoules_per_mole / (unit.nanometer**2),
+                                d * nanometer,
+                                1700 * kilojoules_per_mole / (nanometer**2),
                             )
                             self.bond_pairlist.append(
                                 [i + offset + 1, j + offset + 1, bidx, d, 1700]
                             )  # 1-based
                         exclusion_map.append([i + offset, j + offset])
                     else:
-                        if self.molecule_type == "cooke_lipid":
-                            kbend = 30 * eps_lj / d / d
+                        if self.params.molecule_type == "cooke_lipid":
+                            kbend = 30 * self.eps_lj / d / d
                             bidx = self.hb.addBond(
                                 i + offset,
                                 j + offset,
-                                4 * d * unit.nanometer,
-                                kbend * unit.kilojoules_per_mole / (unit.nanometer**2),
+                                4 * d * nanometer,
+                                kbend * kilojoules_per_mole / (nanometer**2),
                             )
                             self.bond_pairlist.append(
                                 [i + offset + 1, j + offset + 1, bidx, 4 * d, kbend]
@@ -824,20 +859,20 @@ class Lipid(Component):
                                 i + offset,
                                 i + offset + 1,
                                 j + offset,
-                                angle * unit.radian,
-                                k_angle * unit.kilojoules_per_mole / (unit.radian**2),
+                                angle * radian, # pyright: ignore[reportOperatorIssue]
+                                k_angle * kilojoules_per_mole / (radian**2),
                             )
         return exclusion_map
 
     def get_forces(self):
         """Collect the forces required by the selected lipid model."""
-        self.forces = [self.hb]
-        if self.molecule_type == "lipid":
+        self.forces: list[Force] = [self.hb]
+        if self.params.molecule_type == "lipid":
             self.forces.append(self.ha)
-        elif self.molecule_type == "cooke_lipid":
+        elif self.params.molecule_type == "cooke_lipid":
             self.forces.append(self.wcafene)
         else:
-            raise ValueError(f"Unknown lipid type {self.molecule_type}.")
+            raise ValueError(f"Unknown lipid type {self.params.molecule_type}.")
 
 
 class Crowder(Component):
@@ -854,13 +889,11 @@ class Crowder(Component):
         super().calc_properties(pH=pH, verbose=verbose, eps_lj=eps_lj)
         self.calc_x_setup()  # can be overwritten in custom component
 
-    @staticmethod
-    def bond_check(i: int, j: int):
+    def bond_check(self, i: int, j: int):
         """Return whether two crowder beads should be bonded."""
 
         condition = j == i + 1
         return condition
-
 
 class Cyclic(Protein):
     """Represent a cyclic protein or peptide.
@@ -915,6 +948,11 @@ class PTMProtein(Protein):
         self.seq = str(records[self.name].seq)  # one bead seq
         self.nbeads_protein = len(self.seq)
         self.ptm_seq = str(records[self.params.ptm_name].seq)
+
+        if any(location > self.nbeads_protein for location in self.params.ptm_locations):
+            raise ValueError(
+                "PTM location > number of beads"
+            )
 
         for _ in self.params.ptm_locations:  # 1-based
             self.seq = self.seq + self.ptm_seq

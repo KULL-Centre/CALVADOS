@@ -66,49 +66,72 @@ class Sim:
             self.rcent = openmm.CustomExternalForce(self.config.ext_force_expr)
 
     def make_components(self):
-        self.components = np.empty(0)
+        self.components: list[Component] = [] # np.empty(0)
         self.use_restraints = False
 
         for name, comp_params in self.comp_dict.items():
             component_class = COMPONENT_REGISTRY[comp_params.molecule_type]
             comp: Component = component_class(name, comp_params)
 
-            comp.calc_properties(pH=self.pH, verbose=self.verbose, eps_lj = self.eps_lj)
-            if comp.restraint:
-                if comp.restraint_type == 'go':
-                    comp.init_restraint_force(
-                        eps_lj=self.eps_lj, cutoff_lj=self.cutoff_lj,
-                        cutoff_yu=self.cutoff_yu,
-                        eps_yu=self.eps_yu, k_yu = self.k_yu
-                    )
-                else:
-                    comp.init_restraint_force()
+            comp.calc_properties(
+                pH=self.config.pH,
+                verbose=self.config.verbose,
+                eps_lj = self.eps_lj
+            )
+            if comp.params.restraint:
                 self.use_restraints = True
-
-            self.components = np.append(self.components, comp)
+                comp.init_restraint_force()
+                if comp.params.restraint_type == 'go':
+                    comp.init_scaled_nonbonded(
+                        cutoff_lj=self.config.cutoff_lj,
+                        cutoff_yu=self.config.cutoff_yu,
+                        eps_yu=self.eps_yu,
+                        k_yu = self.k_yu,
+                    )
+            self.components.append(comp)
+            # self.components = np.append(self.components, comp)
 
     def count_components(self):
         """ Count components and molecules. """
 
-        self.ncomponents = 0
-        self.nmolecules = 0
+        self.ncomponents: int = 0
+        self.nmolecules: int = 0
         self.nmols_per_comp_type: dict[str,int] = {}
         self.comp_types: set[str] = set()
 
         for comp in self.components:
             self.ncomponents += 1
-            self.nmolecules += comp.nmol
+            self.nmolecules += comp.params.nmol
 
         print(f'Total number of components in the system: {self.ncomponents}')
         print(f'Total number of molecules in the system: {self.nmolecules}')
 
-        if ((self.ncomponents > 1) or (self.nmolecules > 1)) and (self.topol in ['single', 'center']):
+        if ((self.ncomponents > 1) or (self.nmolecules > 1)) and (self.config.topol in ['single', 'center']):
             raise ValueError("Topol 'single/center' incompatible with multiple molecules.")
 
         for comp in self.components:
-            self.nmols_per_comp_type[comp.molecule_type] = self.nmols_per_comp_type.get(comp.molecule_type, 0) + comp.nmol
-            if comp.nmol > 0:
-                self.comp_types.add(comp.molecule_type)
+            self.nmols_per_comp_type[comp.params.molecule_type] = self.nmols_per_comp_type.get(comp.params.molecule_type, 0) + comp.params.nmol
+            if comp.params.nmol > 0:
+                self.comp_types.add(comp.params.molecule_type)
+
+    def reorder_components(self):
+        self.solute_types = ["protein", "rna", "cyclic", "seastar", "ptm_protein"]
+        self.nsolutes = sum(
+            self.nmols_per_comp_type.get(comp_type, 0)
+            for comp_type in self.solute_types
+        )
+
+        # Re-order "solutes" before non-"solutes"
+        solute_components: list[Component] = []
+        non_solute_components: list[Component] = []
+
+        for comp in self.components:
+            if comp.params.molecule_type in self.solute_types:
+                solute_components.append(comp)
+            else:
+                non_solute_components.append(comp)
+
+        self.components = solute_components + non_solute_components
 
     def build_system(self):
         """
@@ -131,23 +154,6 @@ class Sim:
         # make components
         self.make_components()
         self.count_components()
-
-        self.solute_types = ["protein", "rna", "cyclic", "seastar", "ptm_protein"]
-        self.nsolutes = sum(
-            self.nmols_per_comp_type.get(comp_type, 0)
-            for comp_type in self.solute_types
-        )
-
-        # Re-order "solutes" before non-"solutes"
-        molecule_types = np.asarray(
-            [comp.molecule_type for comp in self.components]
-        )
-        solute_mask = np.isin(molecule_types, self.solute_types)
-
-        solute_components = self.components[solute_mask]
-        non_solute_components = self.components[~solute_mask]
-
-        self.components = np.append(solute_components, non_solute_components)
 
         # init interactions
         self.ah, self.yu = interactions.init_nonbonded_interactions(
@@ -216,9 +222,9 @@ class Sim:
                 self.add_particles_system(comp.mws)
 
                 # add interactions + restraints
-                if comp.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein','rna']:
+                if comp.params.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein','rna']:
                     xs = self.place_molecule(comp)
-                elif comp.molecule_type in ['lipid','cooke_lipid']:
+                elif comp.params.molecule_type in ['lipid','cooke_lipid']:
                     xs = self.place_bilayer(comp)
                 self.add_interactions(comp)
 
@@ -413,14 +419,14 @@ class Sim:
 
         # Add Ashbaugh-Hatch
         for sig, lam in zip(comp.sigmas, comp.lambdas):
-            if comp.molecule_type in ['lipid', 'cooke_lipid']:
+            if comp.params.molecule_type in ['lipid', 'cooke_lipid']:
                 self.ah.addParticle([sig*unit.nanometer, lam, 0])
-            elif comp.molecule_type == 'crowder':
+            elif comp.params.molecule_type == 'crowder':
                 self.ah.addParticle([sig*unit.nanometer, lam, -1])
             else: # protein, RNA
                 self.ah.addParticle([sig*unit.nanometer, lam, 1])
             if ("lipid" in self.comp_types) or ("cooke_lipid" in self.comp_types):
-                if comp.molecule_type in ['lipid', 'cooke_lipid']:
+                if comp.params.molecule_type in ['lipid', 'cooke_lipid']:
                     self.cos.addParticle([sig*unit.nanometer, lam, 0])
                 else:
                     self.cos.addParticle([sig*unit.nanometer, lam, 1])
@@ -430,14 +436,14 @@ class Sim:
 
         # Add Charge-Nonpolar Interaction
         if ("lipid" in self.comp_types) or ("cooke_lipid" in self.comp_types):
-            id_cn = 1 if comp.molecule_type == 'protein' else -1
+            id_cn = 1 if comp.params.molecule_type == 'protein' else -1
             for sig, alpha, q in zip(comp.sigmas, comp.alphas, comp.qs):
                 self.cn.addParticle([(sig/2)**3, alpha, q, id_cn])
 
         # Add bonds
         self.add_bonds(comp, offset)
 
-        if comp.molecule_type == 'rna':
+        if comp.params.molecule_type == 'rna':
             self.add_angles(comp, offset)
 
         # Add restraints
@@ -463,7 +469,7 @@ class Sim:
         # Note: Move this to component eventually.
         chain = self.top.add_chain()
 
-        if comp.molecule_type == 'rna':
+        if comp.params.molecule_type == 'rna':
             for idx,resname in enumerate(comp.seq):
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom(resname+"P", element=md.element.phosphorus, residue=res)
@@ -474,7 +480,7 @@ class Sim:
                         self.top.add_bond(chain.atom(i), chain.atom(j))
         else:
             for idx,resname in enumerate(comp.seq):
-                if comp.molecule_type in ['protein','crowder']:
+                if comp.params.molecule_type in ['protein','crowder']:
                     resname = comp.residues.loc[resname,'three']
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom('CA', element=md.element.carbon, residue=res)
