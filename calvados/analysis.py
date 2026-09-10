@@ -21,7 +21,6 @@ from .BLOCKING.main import BlockAnalysis
 from .build import get_ssdomains
 from .inputmodels import InputPath
 
-
 FloatArray: TypeAlias = NDArray[np.float64]
 IntArray: TypeAlias = NDArray[np.int_]
 ChainRange: TypeAlias = int | tuple[int, int]
@@ -242,7 +241,7 @@ def cmap_traj(
     cmap = np.zeros((len(domain0),len(domain1)))
     for ts in u.trajectory[start:end:step]:
         cmap += calc_cmap(domain0,domain1,cutoff)
-    cmap /= len(u.trajectory)
+    cmap /= len(u.trajectory[start:end:step])
     return cmap
 
 def calc_fnc(
@@ -725,7 +724,6 @@ class SlabAnalysis:
         pdil: float = 8.0,
         dGmin: float = -10.0,
         write_conc_arrays: bool = True,
-        plot_profiles: bool = True,
     ) -> None:
         """Calculate dense/dilute concentrations and transfer free energies.
 
@@ -943,8 +941,6 @@ class SlabAnalysis:
     def calc_com_traj(
         self,
         residues_file: InputPath,
-        start: int | None = None,
-        end: int | None = None,
         step: int = 1,
         index_col: str = "three",
     ) -> None:
@@ -961,7 +957,9 @@ class SlabAnalysis:
 
         residues = pd.read_csv(residues_file, index_col=index_col)
 
-        traj = md.load_dcd(f'{self.input_path}/traj.dcd',top=f'{self.input_path}/{self.input_pdb}')
+        traj = md.load_dcd(
+            f'{self.input_path}/traj.dcd',
+            top=f'{self.input_path}/{self.input_pdb}')
 
         chain_prop: dict[str, dict[str, Any]] = {}
         chain_name = cast(str, self.ref_name)

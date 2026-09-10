@@ -2,7 +2,7 @@ import os
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 import mdtraj as md
 import numpy as np
@@ -19,6 +19,7 @@ from .components import (
 )
 from .inputmodels import InputPath, SimulationInput, validate_inputs
 
+FloatArray: TypeAlias = NDArray[np.float64]
 
 def _split_steps(steps: int, max_batches: int = 10) -> list[int]:
     """Split simulation steps into at most ``max_batches`` nonempty batches."""
@@ -50,7 +51,7 @@ class Sim:
         self.config, self.comp_dict = validate_inputs(config, components)
 
         # Config options that can change within sim are stored as copied to attributes
-        self.box: NDArray[np.float64] = np.array(self.config.box, dtype=float)
+        self.box: FloatArray = np.array(self.config.box, dtype=float)
         self.eps_lj: float = float(self.config.eps_lj) * 4.184 # kcal to kJ/mol
         self.slab_eq = self.config.slab_eq
         self.bilayer_eq = self.config.bilayer_eq
@@ -336,7 +337,7 @@ class Sim:
         # unit.barostat force
         if self.box_eq:
             assert self.config.pressure is not None
-            unit.barostat = openmm.MonteCarloAnisotropicunit.barostat(
+            unit.barostat = openmm.MonteCarloAnisotropicBarostat(
                 [
                     self.config.pressure[0] * unit.bar,
                     self.config.pressure[1] * unit.bar,
@@ -353,12 +354,12 @@ class Sim:
         # Bilayer eq. force
         if self.bilayer_eq:
             assert self.config.pressure is not None
-            unit.barostat = openmm.MonteCarloMembraneunit.barostat(
+            unit.barostat = openmm.MonteCarloMembraneBarostat(
                 self.config.pressure[0] * unit.bar,
                 0.0 * unit.bar * unit.nanometer,
                 self.config.temp * unit.kelvin,
-                openmm.MonteCarloMembraneunit.barostat.XYIsotropic,
-                openmm.MonteCarloMembraneunit.barostat.ZFixed,
+                openmm.MonteCarloMembraneBarostat.XYIsotropic,
+                openmm.MonteCarloMembraneBarostat.ZFixed,
                 10000,
             )
             self.system.addForce(unit.barostat)
@@ -386,7 +387,7 @@ class Sim:
             self,
             comp: Component,
             ntries: int = 10000
-        ) -> float:
+        ) -> FloatArray:
         """
         Place proteins based on topology.
         """
@@ -413,16 +414,16 @@ class Sim:
         for x in xs:
             self.pos.append(float(x))
             self.nparticles += 1
-        return float(xs)
+        return xs
 
-    def place_bilayer(self, comp: Component, ntries: int = 10000) -> NDArray[np.float64]:
+    def place_bilayer(self, comp: Component, ntries: int = 10000) -> FloatArray:
         """
         Place proteins based on topology.
         """
 
         inserted = False
         attempts = 0
-        xs: NDArray[np.float64] | None = None
+        xs: FloatArray | None = None
         while not inserted and attempts < ntries and self.bilayergrid.size > 0:
             attempts += 1
             xs_others = np.array(self.pos, dtype=np.float64)
@@ -572,7 +573,7 @@ class Sim:
                     if comp.bond_check(i,j):
                         self.top.add_bond(chain.atom(i), chain.atom(j))
 
-    def add_particles_system(self, mws: NDArray[np.float64]) -> None:
+    def add_particles_system(self, mws: FloatArray) -> None:
         """ Add particles of one molecule to openMM system. """
 
         for mw in mws:
@@ -638,7 +639,6 @@ class Sim:
     def simulate(self) -> None:
         """ Simulate. """
 
-        fcheck_out = f'{self.path}/restart.chk'
         append = False
 
         if self.config.restart == "pdb":
@@ -778,11 +778,11 @@ class Sim:
                 print(index,force)
             if not self.config.pressure_coupling:
                 for index, force in enumerate(self.system.getForces()):
-                    if isinstance(force, openmm.MonteCarloMembraneunit.barostat):
+                    if isinstance(force, openmm.MonteCarloMembraneBarostat):
                         print(f'Removing unit.barostat {index}')
                         self.system.removeForce(index)
                         break
-                    if isinstance(force, openmm.MonteCarloAnisotropicunit.barostat):
+                    if isinstance(force, openmm.MonteCarloAnisotropicBarostat):
                         print(f'Removing unit.barostat {index}')
                         self.system.removeForce(index)
                         break
@@ -837,17 +837,17 @@ class Sim:
         print("STARTING SIMULATION", flush=True)
         if self.config.runtime is not None: # in unit.hours
             simulation.runForClockTime(
-                self.config.runtime*unit.unit.hour,
-                checkpointFile=fcheck_out,
+                self.config.runtime*unit.hour,
+                checkpointFile=self.restart_path,
                 checkpointInterval=30*unit.minute,
             )
         else:
             assert self.config.steps is not None
             for batch in tqdm(_split_steps(self.config.steps), mininterval=1):
                 simulation.step(batch)
-                simulation.saveCheckpoint(fcheck_out)
+                simulation.saveCheckpoint(self.restart_path)
 
-        simulation.saveCheckpoint(fcheck_out)
+        simulation.saveCheckpoint(self.restart_path)
 
         now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")

@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from json import load
 from os import PathLike
-from typing import TypeAlias, Literal
+from typing import Literal, TypeAlias
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
@@ -13,8 +13,8 @@ from openmm import app, unit
 from scipy import constants
 from yaml import safe_load
 
-from .sequence import calc_mw
 from .inputmodels import InputPath
+from .sequence import calc_mw
 
 ################ SYSTEM BUILDING FUNCTIONS ################
 

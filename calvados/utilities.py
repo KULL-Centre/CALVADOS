@@ -1,9 +1,10 @@
 import json
 import os
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from typing import Any
+
 from .inputmodels import InputPath
 
 

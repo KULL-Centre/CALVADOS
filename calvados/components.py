@@ -49,7 +49,6 @@ class Component:
         # read residue parameters from file
         self.residues = read_csv(
             self.params.fresidues,
-            dtype='object'
         ).set_index("one")
     
     def calc_comp_seq(self) -> None:
@@ -181,12 +180,6 @@ class Component:
                     f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n"
                 )
 
-class Protein(Component):
-    """Represent a one-bead-per-residue protein component.
-
-    Proteins may use harmonic or Go-like restraints derived from a structure.
-    """
-
     @staticmethod
     def get_input_structure_file(pdb_folder: InputPath, name: str) -> str:
         """Return the available CIF or PDB structure filename."""
@@ -201,6 +194,12 @@ class Protein(Component):
             raise FileNotFoundError("" \
             f"Neither structure file {cif_file} nor {pdb_file} found."
             )
+
+class Protein(Component):
+    """Represent a one-bead-per-residue protein component.
+
+    Proteins may use harmonic or Go-like restraints derived from a structure.
+    """
 
     def calc_x_from_pdb(self) -> None:
         """Load protein coordinates from a PDB or CIF structure."""
@@ -521,10 +520,12 @@ class RNA(Component):
     def calc_comp_seq(self) -> None:
         """Calculate the one- and two-bead RNA sequences."""
 
+
         if self.params.restraint:
-            four_type_seq, n_termini_seq, c_termini_seq = seq_from_pdb(
-                f"{self.params.pdb_folder}/{self.name}.pdb"
-            )
+            assert self.params.pdb_folder is not None
+            input_struc = self.get_input_structure_file(self.params.pdb_folder, self.name)
+            four_type_seq, n_termini_seq, c_termini_seq = seq_from_pdb(input_struc)
+
             assert self.params.fdomains is not None
             seq_ssdomains = build.get_ssdomains(self.name, self.params.fdomains)
             seq = []
