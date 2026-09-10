@@ -1,12 +1,14 @@
-import pytest
-import numpy as np
-import os
-import pandas as pd
-from calvados.cfg import Config, Job, Components
-from calvados import sim
-import subprocess
-import numpy as np
+from pathlib import Path
+
 import mdtraj as md
+import numpy as np
+import pandas as pd
+import pytest
+
+from calvados import sim
+from calvados.cfg import Components, Config
+
+TEST_DATA = Path(__file__).parent / "data"
 
 # Ashbaugh-Hatch potential
 HALR = lambda r,s,l : 4*0.8368*l*((s/r)**12-(s/r)**6)
@@ -29,10 +31,7 @@ DHSP = lambda r,yukawa_eps,lD,rc : np.where(r<rc, DH(r,yukawa_eps,lD)-DH(rc,yuka
     ],
 )
 
-def test_ah_dh_potentials(resname1,resname2):
-
-    cwd = os.getcwd()
-
+def test_ah_dh_potentials(resname1, resname2, tmp_path: Path):
     sysname = f'{resname1:s}_{resname2:s}'
 
     # set the side length of the cubic box
@@ -50,8 +49,8 @@ def test_ah_dh_potentials(resname1,resname2):
     # set final number of frames to save
     N_frames = 10000
 
-    residues_file = f'{cwd}/tests/data/residues_CALVADOS2.csv'
-    fasta_file = f'{cwd}/tests/data/fastalib.fasta'
+    residues_file = TEST_DATA / "residues_CALVADOS2.csv"
+    fasta_file = TEST_DATA / "fastalib.fasta"
 
     config = Config(
     # GENERAL
@@ -74,9 +73,8 @@ def test_ah_dh_potentials(resname1,resname2):
     )
 
     # PATH
-    path = f'{cwd}/tests/data/{sysname:s}'
-
-    subprocess.run(f'mkdir -p {path}',shell=True)
+    path = tmp_path / sysname
+    path.mkdir()
 
     config.write(path,name='config.yaml')
 
@@ -84,8 +82,8 @@ def test_ah_dh_potentials(resname1,resname2):
     # Defaults
     molecule_type = 'protein',
     nmol = 1, # number of molecules
-    fresidues = residues_file, # residue definitions
-    ffasta = fasta_file, # domain definitions (harmonic restraints)
+    fresidues = str(residues_file), # residue definitions
+    ffasta = str(fasta_file), # domain definitions (harmonic restraints)
     )
     components.add(name=resname1, restraint=False, charge_termini='none')
     components.add(name=resname2, restraint=False, charge_termini='none')
@@ -94,14 +92,13 @@ def test_ah_dh_potentials(resname1,resname2):
 
     sim.run(path=path,fconfig='config.yaml',fcomponents='components.yaml')
 
-    t = md.load(f'{cwd}/tests/data/{sysname:s}/{sysname:s}.dcd',
-                top=f'{cwd}/tests/data/{sysname:s}/top.pdb')
+    t = md.load(path / f'{sysname:s}.dcd', top=path / 'top.pdb')
 
     # compute distance between beads
     dist = md.compute_distances(traj=t,atom_pairs=[[0,1]])[:,0]
 
     # load potential energy
-    u = np.loadtxt(f'{cwd}/tests/data/{sysname:s}/{sysname:s}.log',usecols=(1))
+    u = np.loadtxt(path / f'{sysname:s}.log', usecols=(1))
 
     # calculate potential energy based on bead-bead distance
     df_residues = pd.read_csv(residues_file,index_col=0)
@@ -124,4 +121,3 @@ def test_ah_dh_potentials(resname1,resname2):
     print('Distance of max abs error / sigma_ij:',dist[abs_err.argmax()]/sigma_ij)
     print('Max Relative Error:',(abs_err[u_abs>0]/u_abs[u_abs>0]).max())
     assert np.allclose(u,u_calc,rtol=1e-3,atol=1e-8)
-

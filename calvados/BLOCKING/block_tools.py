@@ -1,42 +1,61 @@
-import numpy as np
+from collections.abc import Sequence
+from typing import TypeAlias, cast
 
-def blocker(array, multi=1):
+import numpy as np
+from numpy.typing import NDArray
+
+
+FloatArray: TypeAlias = NDArray[np.float64]
+IntArray: TypeAlias = NDArray[np.int_]
+
+
+def blocker(array: FloatArray, multi: int = 1) -> tuple[int, IntArray, list[float]]:
+    """Return the sample count, valid block counts, and matching block sizes."""
     dimension = len(array)
     rep = dimension/multi
     n_blocks_try = np.arange([2 if multi==1 else multi][0],dimension+1)
     n_blocks = []
-    block_sizes = []
+    block_sizes: list[float] = []
 
     for n in n_blocks_try:
         bs = dimension/n
         if (dimension % n == 0) & (rep % bs == 0):
             n_blocks.append(int(n))
-            block_sizes.append(bs)
+            block_sizes.append(cast(float, bs))
 
-    return dimension, np.array(n_blocks), block_sizes
+    return dimension, np.array(n_blocks, dtype=np.int_), block_sizes
 
-def check(array, multi=1):
+
+def check(array: FloatArray, multi: int = 1) -> FloatArray:
+    """Trim replica tails until the data support enough blocking transforms."""
     nt = len( blocker(array, multi=multi)[1] )
     if nt > 19:
-        #print ("Possible blocks transformations: "+str(nt)+"\n no lenght correction needed\n")
         return array
-    else:
-        replen = int(len(array) / multi)
-        for c in range(1,102):
-            #print ("Removing "+str(c)+" at the bottom of each replica")
-            chunks_array = np.array([])
-            for n in range(1,multi+1):
-                e = replen*n
-                s = e - replen
-                chunks_array = np.concatenate((chunks_array,array[s:e-c]))
-            nt = len( blocker(chunks_array, multi=multi)[1] )
-            #print ("Possible blocks transformations: "+str(nt)+"\n")
-            if nt > 19:
-                break
-        return chunks_array
 
- 
-def blocking(array, multi=1):
+    replen = int(len(array) / multi)
+    chunks_array = np.array([], dtype=np.float64)
+
+    for c in range(1,102):
+        #print ("Removing "+str(c)+" at the bottom of each replica")
+        chunks_array = np.array([], dtype=np.float64)
+        for n in range(1,multi+1):
+            e = replen*n
+            s = e - replen
+            chunks_array = np.concatenate((chunks_array,array[s:e-c]))
+        nt = len( blocker(chunks_array, multi=multi)[1] )
+        #print ("Possible blocks transformations: "+str(nt)+"\n")
+        if nt > 19:
+            break
+    return chunks_array
+
+
+
+def blocking(array: FloatArray, multi: int = 1) -> FloatArray:
+    """Estimate block errors for an unweighted observable.
+
+    Returns an ``(n, 3)`` array ordered from largest to smallest block size;
+    its columns are block size, standard error, and uncertainty of that error.
+    """
     
     u = array.mean()
     N, n_blocks, block_sizes = blocker(array, multi=multi)
@@ -60,10 +79,24 @@ def blocking(array, multi=1):
 
     return np.flip( np.array([block_sizes, errs, errs_errs]).T , axis=0  )
 
-def fblocking(cv, w, kbt, multi=1, interval=None):
+
+def fblocking(
+    cv: FloatArray,
+    w: FloatArray,
+    kbt: float,
+    multi: int = 1,
+    interval: Sequence[float] | None = None,
+) -> FloatArray:
+    """Estimate block errors for a weighted free-energy profile.
+
+    Returns an ``(n, 3)`` array ordered from largest to smallest block size;
+    its columns are block size, mean free-energy error, and uncertainty of
+    that error.
+    """
 
     N, n_blocks, block_sizes = blocker(cv, multi=multi)
-    u, bins = np.histogram(cv,weights=w,bins=50,range=(interval[0],interval[1]))
+    bounds = cast(Sequence[float], interval)
+    u, bins = np.histogram(cv,weights=w,bins=50,range=(bounds[0], bounds[1]))
     zero_ndx = np.where(u==0)    
     u = np.delete(u, zero_ndx)
     bins = np.delete(bins, zero_ndx)
@@ -86,10 +119,12 @@ def fblocking(cv, w, kbt, multi=1, interval=None):
     
     return np.flip( np.array([block_sizes, err, err_err]).T , axis=0  )
 
-def autocorrelation(x):
+
+def autocorrelation(x: FloatArray) -> FloatArray:
+    """Return the normalized autocorrelation at every nonnegative lag."""
     n = len(x)
     variance = x.var()
     x = x-x.mean()
     r = np.correlate(x, x, mode = 'full')[-n:]
     result = r/(variance*(np.arange(n, 0, -1)))
-    return result
+    return cast(FloatArray, result)

@@ -28,20 +28,17 @@ config = Config(
   ionic = 0.15, # molar
   pH = 7.5,
   topol = 'slab',
+  slab_width = 20,
 
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
-  runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CUDA',
   restart = 'checkpoint',
   frestart = 'restart.chk',
   verbose = True,
   slab_eq = True,
   steps_eq = 100*N_save,
-
-  # JOB SETTINGS (ignore if running locally)
-  submit = False
 )
 
 # PATH
@@ -92,4 +89,3 @@ components = Components(
 components.add(name='FUS-RGG3', molecule_type='protein', nmol=200, charge_termini='both')
 components.add(name='polyU40', molecule_type='rna', nmol=60)
 components.write(path,name='components.yaml')
-

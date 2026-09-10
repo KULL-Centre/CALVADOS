@@ -1,14 +1,81 @@
-import pytest
-import numpy as np
-import os
-import pandas as pd
-from calvados.cfg import Config, Job, Components
-from calvados import sim
-import subprocess
-import numpy as np
-import mdtraj as md
+from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import openmm
+import pytest
+
+from calvados import sim
+from calvados.cfg import Components, Config
+
+TEST_DATA = Path(__file__).parent / "data"
+
+
+def test_maps_custom_restraints_across_multiple_components() -> None:
+    simulation = sim.Sim.__new__(sim.Sim)
+    simulation.components = [
+        SimpleNamespace(name="A", params=SimpleNamespace(nmol=2), nbeads=3),
+        SimpleNamespace(name="B", params=SimpleNamespace(nmol=1), nbeads=4),
+        SimpleNamespace(name="C", params=SimpleNamespace(nmol=2), nbeads=5),
+    ]
+    simulation.config = SimpleNamespace(fcustom_restraints="unused.txt")
+    simulation.parse_custom_restraints = lambda _: [
+        [["B", 1, 4], ["C", 2, 1], "1.0", "700.0"]
+    ]
+
+    simulation.map_custom_restraints()
+
+    assert [component.start_bead for component in simulation.components] == [0, 6, 10]
+    assert simulation.custom_restr_abs == [[9, 15, 1.0, 700.0]]
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "message"),
+    [
+        (["missing", 1, 1], "component 'missing' is not in the system"),
+        (["A", 3, 1], "copy 3 is outside the valid range 1-2"),
+        (["A", 1, 4], "bead 4 is outside the valid range 1-3"),
+        (["A", 0, 1], "copy 0 is outside the valid range 1-2"),
+        (["A", 1, 0], "bead 0 is outside the valid range 1-3"),
+    ],
+)
+def test_rejects_invalid_custom_restraint_endpoint(
+    endpoint: list,
+    message: str,
+) -> None:
+    simulation = sim.Sim.__new__(sim.Sim)
+    simulation.components = [
+        SimpleNamespace(name="A", params=SimpleNamespace(nmol=2), nbeads=3)
+    ]
+    simulation.config = SimpleNamespace(fcustom_restraints="unused.txt")
+    simulation.parse_custom_restraints = lambda _: [
+        [endpoint, ["A", 1, 1], "1.0", "700.0"]
+    ]
+
+    with pytest.raises(ValueError, match=message):
+        simulation.map_custom_restraints()
+
+
+def test_bilayer_placement_stops_after_ntries(monkeypatch: pytest.MonkeyPatch) -> None:
+    simulation = sim.Sim.__new__(sim.Sim)
+    simulation.bilayergrid = np.zeros((3, 3))
+    simulation.box = np.ones(3)
+    simulation.pos = []
+    simulation.nparticles = 0
+    component = SimpleNamespace(name="lipid", xinit=np.zeros((2, 3)))
+
+    monkeypatch.setattr(
+        sim.build,
+        "build_xybilayer",
+        lambda *args, **kwargs: (np.zeros((2, 3)), False),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Could not place bilayer component 'lipid' after 2 attempts",
+    ):
+        simulation.place_bilayer(component, ntries=2)
+
 
 def bond_check(i: int, j: int):
     """ Define bonded term conditions. """
@@ -27,10 +94,7 @@ def bond_check(i: int, j: int):
     ],
 )
 
-def test_cres(name):
-
-    cwd = os.getcwd()
-
+def test_cres(name, tmp_path: Path):
     sysname = f'{name:s}'
 
     # set the side length of the cubic box
@@ -48,8 +112,8 @@ def test_cres(name):
     # set final number of frames to save
     N_frames = 10
 
-    residues_file = f'{cwd}/tests/data/residues_CALVADOS2.csv'
-    fasta_file = f'{cwd}/tests/data/fastalib.fasta'
+    residues_file = TEST_DATA / "residues_CALVADOS2.csv"
+    fasta_file = TEST_DATA / "fastalib.fasta"
 
     config = Config(
     # GENERAL
@@ -66,27 +130,27 @@ def test_cres(name):
     steps = N_frames*N_save, # number of simulation steps
     platform = 'CPU', # or CUDA
     restart = None,
+    frestart = "custom-restart.chk",
     verbose = True,
     report_potential_energy = False, # True,
     random_number_seed = 12345,
 
     custom_restraints = True,
     custom_restraint_type = 'harmonic',
-    fcustom_restraints = f'{cwd}/tests/data/cres.txt',
+    fcustom_restraints = str(TEST_DATA / "cres.txt"),
     )
 
     # PATH
-    path = f'{cwd}/tests/data/{sysname:s}'
-
-    subprocess.run(f'mkdir -p {path}',shell=True)
+    path = tmp_path / sysname
+    path.mkdir()
 
     config.write(path,name='config.yaml')
 
     components = Components(
     # Defaults
     nmol = 1, # number of molecules
-    fresidues = residues_file, # residue definitions
-    ffasta = fasta_file, # domain definitions (harmonic restraints)
+    fresidues = str(residues_file), # residue definitions
+    ffasta = str(fasta_file), # domain definitions (harmonic restraints)
     restraint = False,
     charge_termini = 'none',
     )
@@ -96,7 +160,12 @@ def test_cres(name):
 
     sim.run(path=path,fconfig='config.yaml',fcomponents='components.yaml')
 
-    system = openmm.XmlSerializer.deserialize(open(f"{cwd}/tests/data/{sysname}/{sysname}.xml").read())
+    assert (path / "custom-restart.chk").is_file()
+    assert not (path / "restart.chk").exists()
+
+    system = openmm.XmlSerializer.deserialize(
+        (path / f"{sysname}.xml").read_text()
+    )
 
     force = system.getForces()[3]
     N = force.getNumBonds()
