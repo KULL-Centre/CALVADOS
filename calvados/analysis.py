@@ -1,4 +1,6 @@
 import os
+from collections.abc import Sequence
+from typing import Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
@@ -17,18 +19,42 @@ from tqdm import tqdm
 
 from .BLOCKING.main import BlockAnalysis
 from .build import get_ssdomains
+from .inputmodels import InputPath
 
 
-def center_traj(pdb,traj,start=None,stop=None,step=1):
+FloatArray: TypeAlias = NDArray[np.float64]
+IntArray: TypeAlias = NDArray[np.int_]
+ChainRange: TypeAlias = int | tuple[int, int]
+ChainIds: TypeAlias = ChainRange | IntArray
+ConcentrationResults: TypeAlias = dict[str, float | FloatArray]
+
+
+def center_traj(
+    pdb: InputPath,
+    traj: InputPath,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int = 1,
+) -> None:
     """ Center trajectory """
+    pdb = os.fspath(pdb)
+    traj = os.fspath(traj)
     u = mda.Universe(pdb,traj)
     with mda.Writer(f'{traj[:-4]}_c.dcd', len(u.atoms)) as W:
         for ts in u.trajectory[start:stop:step]:
             u.atoms.translate(-u.atoms.center_of_geometry() + 0.5 * u.dimensions[:3])
             W.write(u.atoms)
 
-def subsample_traj(pdb,traj,start=None,stop=None,step=1):
+def subsample_traj(
+    pdb: InputPath,
+    traj: InputPath,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int = 1,
+) -> None:
     """ Subsample trajectory """
+    pdb = os.fspath(pdb)
+    traj = os.fspath(traj)
 
     u = mda.Universe(pdb,traj)
 
@@ -37,9 +63,17 @@ def subsample_traj(pdb,traj,start=None,stop=None,step=1):
             W.write(u.atoms)
 
 @nb.jit(nopython=True)
-def calc_energy(dmap,sig,lam,rc_lj,eps_lj,qmap,
-                k_yu,rc_yu=4.0,
-               same_domain=False):
+def calc_energy(
+    dmap: FloatArray,
+    sig: FloatArray,
+    lam: FloatArray,
+    rc_lj: float,
+    eps_lj: float,
+    qmap: FloatArray,
+    k_yu: float,
+    rc_yu: float = 4.0,
+    same_domain: bool = False,
+) -> tuple[FloatArray, FloatArray]:
     """ AH and YU energ
 
     Input:
@@ -61,12 +95,10 @@ def calc_energy(dmap,sig,lam,rc_lj,eps_lj,qmap,
             rij = dmap[i,j]
             sigij = sig[i,j]
             lamij = lam[i,j]
-            s0 = 2**(1./6.) * sigij
 
             u_ah[i,j] = ah_potential(rij,sigij,eps_lj,lamij,rc_lj)
 
             # YU
-            q = qmap[i,j]
             if rij <= rc_yu:
                 u_yu[i,j] = yukawa_potential(rij,qmap[i,j],k_yu,rc_yu=rc_yu)
             else:
@@ -74,19 +106,21 @@ def calc_energy(dmap,sig,lam,rc_lj,eps_lj,qmap,
     return u_ah, u_yu
 
 @nb.jit(nopython=True)
-def yukawa_potential(r,q,kappa_yu,rc_yu=4.0):
+def yukawa_potential(
+    r: float, q: float, kappa_yu: float, rc_yu: float = 4.0
+) -> float:
     # q = epsi_yu * epsj_yu
     shift = np.exp(-kappa_yu*rc_yu)/rc_yu
     u = q * (np.exp(-kappa_yu*r)/r - shift)
-    return u
+    return cast(float, u)
 
 @nb.jit(nopython=True)
-def lj_potential(r,sig,eps):
+def lj_potential(r: float, sig: float, eps: float) -> float:
     ulj = 4.*eps*((sig/r)**12 - (sig/r)**6)
     return ulj
 
 @nb.jit(nopython=True)
-def ah_potential(r,sig,eps,l,rc):
+def ah_potential(r: float, sig: float, eps: float, l: float, rc: float) -> float:
     if r <= 2**(1./6.)*sig:
         ah = lj_potential(r,sig,eps) - l * lj_potential(rc,sig,eps) + eps * (1 - l)
     elif r <= rc:
@@ -95,7 +129,7 @@ def ah_potential(r,sig,eps,l,rc):
         ah = 0.
     return ah
 
-def calc_dmap(domain0,domain1):
+def calc_dmap(domain0: Any, domain1: Any) -> FloatArray:
     """ Distance map (nm) for single configuration
 
     Input: Atom groups
@@ -103,13 +137,17 @@ def calc_dmap(domain0,domain1):
     dmap = distances.distance_array(domain0.positions, # reference
                                     domain1.positions, # configuration
                                     box=domain0.dimensions) / 10.
-    return dmap
+    return cast(FloatArray, dmap)
 
-def calc_raw_dmap(pos0,pos1):
+
+def calc_raw_dmap(pos0: FloatArray, pos1: FloatArray) -> FloatArray:
     dmap = distances.distance_array(pos0,pos1)
-    return dmap
+    return cast(FloatArray, dmap)
 
-def self_distances(pos,box=None) -> NDArray:
+
+def self_distances(
+    pos: FloatArray, box: FloatArray | None = None
+) -> FloatArray:
     """ Self distance map for matrix of positions
 
     If box dimensions are provided, distances are
@@ -132,7 +170,13 @@ def self_distances(pos,box=None) -> NDArray:
             k += 1
     return dmap
 
-def calc_wcn(comp,pos,fdomains=None,ssonly=True,r0=0.7):
+def calc_wcn(
+    comp: Any,
+    pos: FloatArray,
+    fdomains: InputPath | None = None,
+    ssonly: bool = True,
+    r0: float = 0.7,
+) -> FloatArray:
     """
     pos: positions [nm]
     r0: switching parameter [nm]
@@ -143,7 +187,7 @@ def calc_wcn(comp,pos,fdomains=None,ssonly=True,r0=0.7):
     # dmap = self_distances(pos)
 
     if ssonly:
-        ssdomains = get_ssdomains(comp.name,fdomains)
+        ssdomains = get_ssdomains(comp.name, cast(InputPath, fdomains))
         wcn = np.zeros((N))
         for i in range(N-1):
             for j in range(i+1,N):
@@ -171,7 +215,7 @@ def calc_wcn(comp,pos,fdomains=None,ssonly=True,r0=0.7):
 #     cmap = np.where(dmap<cutoff,1,0)
 #     return(cmap)
 
-def calc_cmap(domain0,domain1,cutoff=1.0):
+def calc_cmap(domain0: Any, domain1: Any, cutoff: float = 1.0) -> FloatArray:
      """ Contact map for single configuration
 
      Input: MDAnalysis Atom groups (can be the same or different)
@@ -182,7 +226,15 @@ def calc_cmap(domain0,domain1,cutoff=1.0):
      cmap = .5 - .5*np.tanh((dmap-cutoff)/.3)
      return(cmap)
 
-def cmap_traj(u,domain0,domain1,cutoff=1.0,start=None,end=None,step=1):
+def cmap_traj(
+    u: Any,
+    domain0: Any,
+    domain1: Any,
+    cutoff: float = 1.0,
+    start: int | None = None,
+    end: int | None = None,
+    step: int = 1,
+) -> FloatArray:
     """ Average number of contacts along trajectory
 
     Input:
@@ -197,8 +249,16 @@ def cmap_traj(u,domain0,domain1,cutoff=1.0,start=None,end=None,step=1):
     cmap /= len(u.trajectory)
     return cmap
 
-def calc_fnc(u,uref,selstr,cutoff=1.5,kmax=1,
-    bfac=[],sig_shift=0.8,width=50.):
+def calc_fnc(
+    u: Any,
+    uref: Any,
+    selstr: str,
+    cutoff: float = 1.5,
+    kmax: int = 1,
+    bfac: Sequence[float] = (),
+    sig_shift: float = 0.8,
+    width: float = 50.0,
+) -> FloatArray:
     agref = uref.select_atoms(selstr)
     ag = u.select_atoms(selstr)
 
@@ -225,9 +285,15 @@ def calc_fnc(u,uref,selstr,cutoff=1.5,kmax=1,
         fnc[t] = cnat_sum/cref_sum
     return fnc
 
-def calc_rmsd(u,uref,select='all',f_out=None,step=1):
+def calc_rmsd(
+    u: Any,
+    uref: Any,
+    select: str = "all",
+    f_out: InputPath | None = None,
+    step: int = 1,
+) -> tuple[FloatArray, FloatArray, FloatArray]:
     # print('First alignment')
-    aligner = AlignTraj(u, uref, select=select, in_memory=True).run(step=step) # align to crystal structure
+    _ = AlignTraj(u, uref, select=select, in_memory=True).run(step=step) # align to crystal structure
     Rref = rms.RMSD(u,uref,select=select) # get RMSD to reference
     Rref.run(step=step)
     coords = u.trajectory.timeseries(u.atoms,step=step)
@@ -236,7 +302,7 @@ def calc_rmsd(u,uref,select='all',f_out=None,step=1):
     u_mean.load_new(coords_mean[:, None, :], order="afc")
 
     # print('Second alignment')
-    aligner = AlignTraj(u, u_mean, select=select, in_memory=True).run(step=step) # align to mean structure
+    _ = AlignTraj(u, u_mean, select=select, in_memory=True).run(step=step) # align to mean structure
     coords = u.trajectory.timeseries(u.atoms,step=step) # get coords
     coords_mean = coords.mean(axis=1) # get new mean
     u_mean2 = Merge(u.atoms)
@@ -252,77 +318,108 @@ def calc_rmsd(u,uref,select='all',f_out=None,step=1):
         u_mean2.select_atoms(select).write(f_out)
     return Rref.results.rmsd.T,Rmean.results.rmsd.T,RMSFmean.results.rmsf
 
-def get_masses(seq,residues,charge_termini=True):
+def get_masses(
+    seq: Sequence[str], residues: pd.DataFrame, charge_termini: bool = True
+) -> FloatArray:
     lseq = list(seq)
-    masses = residues.loc[lseq,'MW'].values
+    masses = np.array(residues.loc[lseq,'MW'].values, dtype=np.float64)
     if charge_termini:
         masses[0] += 2.
         masses[-1] += 16.
-    return masses
+    return cast(FloatArray, masses)
 
-def calc_rg(u,ag,seq=[],residues=[],start=None,stop=None,step=None):
+def calc_rg(
+    u: Any,
+    ag: Any,
+    seq: Sequence[str] = (),
+    residues: pd.DataFrame | None = None,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int | None = None,
+) -> FloatArray:
     if len(seq) > 0:
-        masses = get_masses(seq,residues)
+        masses = get_masses(seq, cast(pd.DataFrame, residues))
         # print(masses)
     else:
         masses = np.array([1. for _ in range(len(ag.atoms))])
 
-    rogs = []
+    rogs: list[float] = []
     for t, ts in enumerate(u.trajectory[start:stop:step]):
         com = ag.center(weights=masses)
         pos = (ag.positions - com) / 10.
         rog_sq = np.einsum('i,i->',masses,np.einsum('ij,ij->i',pos,pos))/np.sum(masses)
         rog = np.sqrt(rog_sq)
-        rogs.append(rog)
-    rogs = np.array(rogs)
-    return rogs
+        rogs.append(cast(float, rog))
+    return np.array(rogs)
 
-def calc_ete(u,ag,start=None,stop=None,step=None):
+def calc_ete(
+    u: Any,
+    ag: Any,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int | None = None,
+) -> tuple[FloatArray, float, float]:
     """ Mean and std of end to end distance of atom group across trajectory """
-    etes = []
+    ete_values: list[float] = []
     # etes2 = []
     for t, ts in enumerate(u.trajectory[start:stop:step]):
         ete = np.linalg.norm(ag[0].position-ag[-1].position) / 10.
-        etes.append(ete)
+        ete_values.append(cast(float, ete))
         # etes2.append(ete**2)
-    etes = np.array(etes)
+    etes = np.array(ete_values)
     ete_m = np.mean(etes)
     ete_sem = sem(etes)
     # ete2_m = np.mean(etes2)
     # etes = np.array(etes)
-    return etes, ete_m, ete_sem#, ete2_m
+    return etes, cast(float, ete_m), cast(float, ete_sem)  # , ete2_m
 
-def calc_ocf(u,ag,start=None,stop=None,step=None):
+def calc_ocf(
+    u: Any,
+    ag: Any,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int | None = None,
+) -> tuple[FloatArray, FloatArray]:
     """ Orientational correlation factor (OCF) as function of separation along the chain """
-    ocfs = []
+    ocf_values: list[list[float]] = []
     for t,ts in enumerate(u.trajectory[start:stop:step]):
         x = ag.positions / 10.
         xb = x[1:] - x[:-1]
         Lxb = np.linalg.norm(xb,axis=1)
         xbred = (xb.T / Lxb).T
-        dots = [[] for _ in range(len(xbred))]
+        dots: list[list[float]] = [[] for _ in range(len(xbred))]
 
         for idx0,xb0 in enumerate(xbred,start=0):
             for idx1,xb1 in enumerate(xbred[idx0:],start=idx0):
                 dot = np.dot(xb0,xb1)
                 ij = idx1-idx0
-                dots[ij].append(dot)
-        dots_avg = []
+                dots[ij].append(cast(float, dot))
+        dots_avg: list[float] = []
         for dot in dots:
-            dots_avg.append(np.mean(dot))
-        ocfs.append(dots_avg)
-    ocfs = np.array(ocfs)
+            dots_avg.append(cast(float, np.mean(dot)))
+        ocf_values.append(dots_avg)
+    ocfs = np.array(ocf_values)
     ocf = np.mean(ocfs,axis=0)
     ocf_sem = sem(ocfs)
-    return ocf, ocf_sem
+    return cast(FloatArray, ocf), cast(FloatArray, ocf_sem)
 
 #### SCALING EXPONENT
 
-def scaling_exp(n,r0,v):
+def scaling_exp(n: FloatArray, r0: float, v: float) -> FloatArray:
     rh = r0 * n**v
     return rh
 
-def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[],ij0=5):
+def fit_scaling_exp(
+    u: Any,
+    ag: Any,
+    r0: float | None = None,
+    traj: bool = True,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int | None = None,
+    slic: Sequence[int] = (),
+    ij0: int = 5,
+) -> tuple[IntArray, FloatArray, float, float, float]:
     """ Fit scaling exponent of single chain
 
     Input:
@@ -351,17 +448,13 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
     else:
         dmap = calc_dmap(ag,ag) # in nm
     ij = np.arange(N)
-    dij = []
-    for i in range(N):
-        dij.append([])
-    for i in ij:
+    dij_values: list[list[float]] = [[] for _ in range(N)]
+    for i_value in ij:
+        i = int(i_value)
         for j in range(i,N):
-            dij[j-i].append(dmap[i,j]) # in nm
+            dij_values[j-i].append(float(dmap[i,j])) # in nm
 
-    for i in range(N):
-        dij[i] = np.mean(dij[i])
-    # print(dij)
-    dij = np.array(dij)
+    dij = np.array([np.mean(values) for values in dij_values])
     # print(ij.shape)
     # print(dij.shape)
     if r0 is None:
@@ -374,9 +467,27 @@ def fit_scaling_exp(u,ag,r0=None,traj=True,start=None,stop=None,step=None,slic=[
         v = v[0]
         perr = np.sqrt(np.diag(pcov))
         verr = perr[0]
-    return ij, dij, r0, v, verr
+    return (
+        cast(IntArray, ij),
+        cast(FloatArray, dij),
+        cast(float, r0),
+        cast(float, v),
+        cast(float, verr),
+    )
 
-def save_conf_prop(path,name,residues_file,output_path,start=0,is_idr=True,select='all',cutoff=1.0, kmax=3):
+def save_conf_prop(
+    path: InputPath,
+    name: str,
+    residues_file: InputPath,
+    output_path: InputPath,
+    start: int = 0,
+    is_idr: bool = True,
+    select: str = "all",
+    cutoff: float = 1.0,
+    kmax: int = 3,
+) -> None:
+    path = os.fspath(path)
+    output_path = os.fspath(output_path)
     residues = pd.read_csv(residues_file).set_index('three')
     u = mda.Universe(f'{path:s}/top.pdb',f'{path:s}/{name:s}.dcd',in_memory=True)
     ag = u.select_atoms(select)
@@ -406,29 +517,34 @@ def save_conf_prop(path,name,residues_file,output_path,start=0,is_idr=True,selec
     np.save(output_path+'/cmap.npy',cmap)
 
 class SlabAnalysis:
-    def __init__(self,
-            name,
-            input_path = '.',output_path = '.',
-            input_pdb = 'top.pdb', input_dcd = None,
-            centered_dcd = 'traj.dcd',
-            ref_chains = None, ref_name = None,
-            client_chain_list = [], client_names = [],
-            verbose = False
-            ):
+    def __init__(
+        self,
+        name: str,
+        input_path: InputPath = ".",
+        output_path: InputPath = ".",
+        input_pdb: InputPath = "top.pdb",
+        input_dcd: InputPath | None = None,
+        centered_dcd: InputPath = "traj.dcd",
+        ref_chains: tuple[int, int] | None = None,
+        ref_name: str | None = None,
+        client_chain_list: Sequence[tuple[int, int]] = (),
+        client_names: Sequence[str] = (),
+        verbose: bool = False,
+    ) -> None:
         self.name = name
-        self.input_path = input_path
-        self.output_path = output_path
-        self.input_pdb = input_pdb
+        self.input_path = os.fspath(input_path)
+        self.output_path = os.fspath(output_path)
+        self.input_pdb = os.fspath(input_pdb)
         if input_dcd is None:
             input_dcd = f'{self.name}.dcd'
-        self.input_dcd = input_dcd
-        self.centered_dcd = centered_dcd
+        self.input_dcd = os.fspath(input_dcd)
+        self.centered_dcd = os.fspath(centered_dcd)
         self.ref_chains = ref_chains
         self.ref_name = ref_name
         if self.ref_name is None:
             self.ref_name = 'ref'
-        self.client_chain_list = client_chain_list
-        self.client_names = client_names
+        self.client_chain_list = list(client_chain_list)
+        self.client_names = list(client_names)
         if len(self.client_names) == 0:
             self.client_names = [f'client_{idx}' for idx in range(len(self.client_chain_list))]
         self.verbose = verbose
@@ -444,8 +560,13 @@ class SlabAnalysis:
             print(f'Input pdb: {self.input_path}/{self.input_pdb}')
             print(f'Input dcd: {self.input_path}/{self.input_dcd}')
 
-    def center(self, start=None, end=None, step=1,
-            center_target = 'ref'):
+    def center(
+        self,
+        start: int | None = None,
+        end: int | None = None,
+        step: int = 1,
+        center_target: str = "ref",
+    ) -> None:
         """
         Center slab trajectory.
         center_target: 'ref' or 'all'. Define if particles for centering are from reference or whole system.
@@ -469,7 +590,8 @@ class SlabAnalysis:
         ag = u.atoms
         n_atoms = ag.n_atoms
         # create list of bonds
-        bonds = []
+        bonds: list[tuple[int, int]] = []
+        assert u.segments is not None
         for segment in u.segments:
             for i in segment.atoms.indices[:-1]:
                 bonds.extend([(i, i+1)])
@@ -502,8 +624,13 @@ class SlabAnalysis:
         if self.verbose:
             print(f'Written {n_frames} centered frames to {self.input_path}/{self.centered_dcd}')
 
-    def calc_profiles(self, start=None, end=None, step=1,
-            save_individual_profiles=True):
+    def calc_profiles(
+        self,
+        start: int | None = None,
+        end: int | None = None,
+        step: int = 1,
+        save_individual_profiles: bool = True,
+    ) -> None:
         """
         Calculate concentration profiles for reference chains (and possible clients).
         Keep start=None, end=None, step=1 if the centered trajectory is already cropped. """
@@ -527,7 +654,7 @@ class SlabAnalysis:
             np.save(f'{self.output_path}/{self.name}_{self.ref_name}_profile.npy', h_ref) # in mM
 
         h_ref_mean = h_ref.mean(axis=0) # mM
-        self.all_profiles = [self.z_nm,h_ref_mean]
+        all_profiles = [self.z_nm, h_ref_mean]
 
         # Client profiles
         for i, (first,last) in enumerate(self.client_chain_list):
@@ -550,18 +677,21 @@ class SlabAnalysis:
             if save_individual_profiles:
                 np.save(f'{self.output_path}/{self.name}_{self.client_names[i]}_profile.npy', h_sel) # individual profiles
             h_sel_mean = h_sel.mean(axis=0) # mM
-            self.all_profiles.append(h_sel_mean)
-        self.all_profiles = np.array(self.all_profiles)
+            all_profiles.append(h_sel_mean)
+        self.all_profiles = np.array(all_profiles)
 
         np.save(f'{self.output_path}/{self.name}_profiles.npy', self.all_profiles) # all trajectory-averaged profiles
         if self.verbose:
             print(f'Output written to {self.output_path}/')
 
-    def calc_concentrations(self,
-            pden=2., pdil=8., dGmin=-10.,
-            write_conc_arrays=True,
-            # input_pdb='top.pdb',
-            plot_profiles=True):
+    def calc_concentrations(
+        self,
+        pden: float = 2.0,
+        pdil: float = 8.0,
+        dGmin: float = -10.0,
+        write_conc_arrays: bool = True,
+        plot_profiles: bool = True,
+    ) -> None:
 
         self.pden, self.pdil = pden, pdil
         self.dGmin = dGmin
@@ -587,7 +717,9 @@ class SlabAnalysis:
 
         self.df_results.to_csv(f'{self.output_path}/{self.name}_ps_results.csv')
 
-    def save_conc_results(self, comp_name, results):
+    def save_conc_results(
+        self, comp_name: str, results: ConcentrationResults
+    ) -> None:
         for key, val in results.items():
             if key in ['dense_array', 'dilute_array']:
                 if self.write_conc_arrays:
@@ -595,7 +727,9 @@ class SlabAnalysis:
             else:
                 self.df_results.loc[comp_name, key] = val
 
-    def calc_single_conc(self, h, ref=True):
+    def calc_single_conc(
+        self, h: FloatArray, ref: bool = True
+    ) -> ConcentrationResults:
         """
         Calculate dense and dilute phase concentrations.
         path: Input path.
@@ -609,7 +743,7 @@ class SlabAnalysis:
         if ref:
             self.cutoffs_dense, self.cutoffs_dilute = self.fit_profile(self.z_nm, hm, self.pden, self.pdil)
 
-        results = {}
+        results: ConcentrationResults = {}
         results['cutoffs_dense_right'], results['cutoffs_dense_left'] = self.cutoffs_dense[0], self.cutoffs_dense[1]
         results['cutoffs_dilute_right'], results['cutoffs_dilute_left'] = self.cutoffs_dilute[0], self.cutoffs_dilute[1]
 
@@ -634,7 +768,7 @@ class SlabAnalysis:
         results['dG'], results['dG_err'] = dG, dG_error # kT
         return results
 
-    def load_traj(self, centered=False, step=1):
+    def load_traj(self, centered: bool = False, step: int = 1) -> None:
         if centered:
             dcd = self.centered_dcd
             traj_str = 'centered'
@@ -646,7 +780,7 @@ class SlabAnalysis:
             print(f'Loaded {traj_str} trajectory {self.input_path}/{dcd}')
             print(f'nframes: {len(self.u.trajectory[::step])}')
 
-    def load_ref(self):
+    def load_ref(self) -> None:
         if self.ref_chains is None:
             self.ref_chains = (0, len(self.u.segments)-1)
         self.sg_ref = self.u.segments[self.ref_chains[0]:self.ref_chains[1]+1]
@@ -658,7 +792,13 @@ class SlabAnalysis:
 
     @staticmethod
     @nb.jit(nopython=True)
-    def distribute_monomers(prop, prop_binned, bin_counts, bead_positions, L):
+    def distribute_monomers(
+        prop: float,
+        prop_binned: FloatArray,
+        bin_counts: FloatArray,
+        bead_positions: FloatArray,
+        L: float,
+    ) -> tuple[FloatArray, FloatArray]:
         for bpos in bead_positions:
             while (bpos >= L) or (bpos < 0.):
                 bpos -= (bpos // L) * L
@@ -667,7 +807,7 @@ class SlabAnalysis:
             bin_counts[bin_idx] += 1
         return prop_binned, bin_counts
 
-    def calc_orientations(self, step=1):
+    def calc_orientations(self, step: int = 1) -> None:
         """ 
         Calculate orientational order parameter S along z,
         distributed to bins corresponding to monomers of each chain.
@@ -699,7 +839,7 @@ class SlabAnalysis:
         
         np.save(f'{self.output_path}/{self.name}_sz.npy',sz_m)
 
-    def calc_rgs(self, step=1):
+    def calc_rgs(self, step: int = 1) -> None:
         """
         Calculate Rg along z,
         distributed to bins corresponding to monomers of each chain.
@@ -726,7 +866,7 @@ class SlabAnalysis:
                 rg_m[bin_idx] = np.sqrt(rg2 / bin_counts[bin_idx])
         np.save(f'{self.output_path}/{self.name}_rg.npy',rg_m)
 
-    def plot_density_profiles(self):
+    def plot_density_profiles(self) -> None:
         fig, ax = plt.subplots(figsize=(8,4))
 
         for c1,c2 in zip(self.cutoffs_dense,self.cutoffs_dilute):
@@ -751,9 +891,14 @@ class SlabAnalysis:
         fig.tight_layout()
         fig.savefig(f'{self.output_path}/{self.name}_profiles.pdf')
 
-    def calc_com_traj(self,residues_file,
-        start=None,end=None,step=1,
-        index_col='three'):
+    def calc_com_traj(
+        self,
+        residues_file: InputPath,
+        start: int | None = None,
+        end: int | None = None,
+        step: int = 1,
+        index_col: str = "three",
+    ) -> None:
         """
         Calculate trajectory of chain COMs and per-frame Rg's for each chain.
         """
@@ -767,17 +912,17 @@ class SlabAnalysis:
 
         traj = md.load_dcd(f'{self.input_path}/traj.dcd',top=f'{self.input_path}/{self.input_pdb}')
 
-        chain_prop = {}
-        chain_name = self.ref_name
+        chain_prop: dict[str, dict[str, Any]] = {}
+        chain_name = cast(str, self.ref_name)
         n_chains = 0
-        chainids = self.ref_chains
+        chainids = cast(tuple[int, int], self.ref_chains)
 
         chain_prop[chain_name] = {}
         # if type(chainids) is int:
         #     chainids = (chainids, chainids)
         seq = [res.name for res in traj.top.chain(chainids[0]).residues]
         if len(seq[0]) == 1:
-            seq = [SeqUtils.seq3(res).upper() for res in seq]
+            seq = [SeqUtils.seq3(res).upper() for res in seq]  # type: ignore[no-untyped-call]
         mws = residues.loc[seq,'MW'].values
         mws[0] += 2
         mws[-1] += 16
@@ -809,7 +954,7 @@ class SlabAnalysis:
         cmtraj[0].save_pdb(f'{self.output_path}/{self.name}_com_top.pdb')
         cmtraj.save_dcd(f'{self.output_path}/{self.name}_com_traj.dcd')
 
-    def calc_aa_bins(self,step=1):
+    def calc_aa_bins(self, step: int = 1) -> None:
         """ Calculate bins of amino acid positions. """
 
         aminoacids = "ACDEFGHIKLMNPQRSTVWY"
@@ -820,7 +965,10 @@ class SlabAnalysis:
         self.bins = np.zeros((int(self.lz), 20))
 
         if len(self.ag_ref_per_chain[0].names[0]) > 1: # three letter res
-            bead_names = [str(SeqUtils.seq1(s)) for s in self.ag_ref_per_chain[0].names]
+            bead_names = [
+                str(SeqUtils.seq1(s))  # type: ignore[no-untyped-call]
+                for s in self.ag_ref_per_chain[0].names
+            ]
         else:
             bead_names = [str(s) for s in self.ag_ref_per_chain[0].names]
 
@@ -835,7 +983,12 @@ class SlabAnalysis:
 
     @staticmethod
     @nb.jit(nopython=True)
-    def aa_into_bins(bins, bead_positions, aa_indices, L):
+    def aa_into_bins(
+        bins: FloatArray,
+        bead_positions: FloatArray,
+        aa_indices: tuple[int, ...],
+        L: float,
+    ) -> FloatArray:
         for resid, bpos in enumerate(bead_positions):
         # for bpos, aa_idx in zip(bead_positions, aa_indices):
             aa_idx = aa_indices[resid]
@@ -847,7 +1000,7 @@ class SlabAnalysis:
             bins[bin_idx, aa_idx] += 1
         return bins
 
-    def calc_resid_bins(self,step=1):
+    def calc_resid_bins(self, step: int = 1) -> None:
         """ Calculate bins of amino acid positions. """
 
         self.load_traj(centered=True, step=step)
@@ -864,7 +1017,9 @@ class SlabAnalysis:
 
     @staticmethod
     @nb.jit(nopython=True)
-    def resid_into_bins(bins, bead_positions, L):
+    def resid_into_bins(
+        bins: FloatArray, bead_positions: FloatArray, L: float
+    ) -> FloatArray:
         for resid, bpos in enumerate(bead_positions):
             while (bpos >=  L) or (bpos < 0.):
                 bpos -= (bpos // L) *  L
@@ -881,12 +1036,12 @@ class SlabAnalysis:
     #     return bpos
 
     @staticmethod
-    def calc_cos(a,b):
+    def calc_cos(a: FloatArray, b: FloatArray) -> float:
         cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
-        return cos
+        return cast(float, cos)
 
     @staticmethod
-    def calc_z_Angstr(u):
+    def calc_z_Angstr(u: Any) -> tuple[float, FloatArray, FloatArray]:
         lz = u.dimensions[2]
         edges = np.arange(0,lz+1,1)
         dz = (edges[1] - edges[0]) / 2.
@@ -894,7 +1049,7 @@ class SlabAnalysis:
         return lz, edges, z
 
     @staticmethod
-    def calc_z_nm_centered(u):
+    def calc_z_nm_centered(u: Any) -> tuple[float, FloatArray, FloatArray]:
         lz = u.dimensions[2]
         edges = np.arange(-lz/2.,lz/2.+0.0001,1)/10
         dz = (edges[1] - edges[0]) / 2.
@@ -902,14 +1057,16 @@ class SlabAnalysis:
         return lz, edges, z
 
     @staticmethod
-    def calc_zpatch(z,h):
+    def calc_zpatch(
+        z: FloatArray, h: NDArray[np.integer[Any]]
+    ) -> tuple[FloatArray, FloatArray]:
         cutoff = 0
         ct = 0.
         ct_max = 0.
-        zwindow = []
-        hwindow = []
-        zpatch = []
-        hpatch = []
+        zwindow: list[float] = []
+        hwindow: list[float] = []
+        zpatch: list[float] = []
+        hpatch: list[float] = []
         for ix, x in enumerate(h):
             if x > cutoff:
                 ct += x
@@ -923,12 +1080,17 @@ class SlabAnalysis:
                 ct = 0.
                 zwindow = []
                 hwindow = []
-        zpatch = np.array(zpatch)
-        hpatch = np.array(hpatch)
-        return zpatch, hpatch
+        return np.array(zpatch), np.array(hpatch)
 
     @staticmethod
-    def calc_dG(c_dil,e_dil,c_den,e_den,ndraws=10000,dGmin=-10):
+    def calc_dG(
+        c_dil: float,
+        e_dil: float,
+        c_den: float,
+        e_den: float,
+        ndraws: int = 10000,
+        dGmin: float = -10,
+    ) -> tuple[float, float]:
         # Calculate deltaG
         if np.isnan(c_dil) or np.isnan(c_den):
             print("Not converged, setting dG to NaN")
@@ -950,11 +1112,11 @@ class SlabAnalysis:
             dG = np.log(c_dil/c_den)
             spread_dil = np.random.normal(c_dil,e_dil,size=ndraws)
             spread_den = np.random.normal(c_den,e_den,size=ndraws)
-            spread_dGs = []
+            spread_dGs: list[float] = []
             for idraw, (dil,den) in enumerate(zip(spread_dil,spread_den)):
                 if dil > 0 and den > 0:
                     spread_dGs.append(np.log(dil/den))
-            dG_error = np.std(spread_dGs)
+            dG_error = cast(float, np.std(spread_dGs))
         if dG < dGmin:
             dG = dGmin
             dG_error = 0.
@@ -962,9 +1124,18 @@ class SlabAnalysis:
         return dG, dG_error
 
     @staticmethod
-    def fit_profile(z, hm, pden, pdil):
-        profile = lambda x,a,b,c,d : .5*(a+b)+.5*(b-a)*np.tanh((np.abs(x)-c)/d) # hyperbolic function, parameters correspond to csat etc.
-        residuals = lambda params,*args : ( args[1] - profile(args[0], *params) )
+    def fit_profile(
+        z: FloatArray, hm: FloatArray, pden: float, pdil: float
+    ) -> tuple[FloatArray, FloatArray]:
+        def profile(
+            x: FloatArray, a: float, b: float, c: float, d: float
+        ) -> FloatArray:
+            return .5*(a+b)+.5*(b-a)*np.tanh((np.abs(x)-c)/d)
+
+        def residuals(
+            params: FloatArray, x_values: FloatArray, h_values: FloatArray
+        ) -> FloatArray:
+            return h_values - profile(x_values, *params)
         z1 = z[z>0]
         h1 = hm[z>0]
         z2 = z[z<0]
@@ -983,7 +1154,9 @@ class SlabAnalysis:
             print(res1.x,res2.x)
 
     @staticmethod
-    def calc_block_errors(denarray, dilarray):
+    def calc_block_errors(
+        denarray: FloatArray, dilarray: FloatArray
+    ) -> tuple[float, float]:
         """ Block error analysis """
 
         block_den = BlockAnalysis(denarray)
@@ -1010,8 +1183,18 @@ class SlabAnalysis:
 #     # cos = np.dot(a,b) / (np.linalg.norm(a) * np.linalg.norm(b))
 #     return cos
 
-def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},
-        start=None,end=None,step=1,input_pdb='top.pdb',verbose=False):
+def calc_com_traj(
+    path: InputPath,
+    sysname: str,
+    output_path: InputPath,
+    residues_file: InputPath,
+    chainid_dict: dict[str, ChainRange] | None = None,
+    start: int | None = None,
+    end: int | None = None,
+    step: int = 1,
+    input_pdb: InputPath = "top.pdb",
+    verbose: bool = False,
+) -> None:
     """
     Calculate trajectory of chain COMs and per-frame Rg's for each chain.
 
@@ -1030,12 +1213,18 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},
         single-component system named `sysname` and calculates a COM trajectory and per-frame Rg's
         for all the chains in the topology.
     """
+    path = os.fspath(path)
+    output_path = os.fspath(output_path)
+    input_pdb = os.fspath(input_pdb)
+    if chainid_dict is None:
+        chainid_dict = {}
+
     if not os.path.isfile(f'{path:s}/traj.dcd'):
         u = mda.Universe(f'{path:s}/{input_pdb:s}',f'{path:s}/{sysname:s}.dcd',in_memory=True)
         ag = u.select_atoms('all')
         n_atoms = ag.n_atoms
         # create list of bonds
-        bonds = []
+        bonds: list[tuple[int, int]] = []
         for segment in u.segments:
             for i in segment.atoms.indices[:-1]:
                 bonds.extend([(i, i+1)])
@@ -1054,11 +1243,11 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},
 
     residues = pd.read_csv(residues_file, index_col='three')
 
-    chain_prop = {}
+    chain_prop: dict[str, dict[str, Any]] = {}
     n_chains = 0
     for chain_name, chainids in chainid_dict.items():
         chain_prop[chain_name] = {}
-        if type(chainids) is int:
+        if isinstance(chainids, int):
             chainids = (chainids, chainids)
         seq = [res.name for res in traj.top.chain(chainids[0]).residues]
         mws = residues.loc[seq,'MW'].values
@@ -1101,7 +1290,14 @@ def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},
     cmtraj[0].save_pdb(output_path+f'/{sysname:s}_com_top.pdb')
     cmtraj.save_dcd(output_path+f'/{sysname:s}_com_traj.dcd')
 
-def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,input_pdb='top.pdb'):
+def calc_contact_map(
+    path: InputPath,
+    sysname: str,
+    output_path: InputPath,
+    chainid_dict: dict[str, ChainIds] | None = None,
+    is_slab: bool = False,
+    input_pdb: InputPath = "top.pdb",
+) -> None:
     """
     Calculate the contact map between two sets of chain IDs specified in the given dictionary.
 
@@ -1126,19 +1322,29 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         In this case, the first item in `chainid_dict` should be the component
         used to center the slab in `SlabAnalysis`.
     """
+    path = os.fspath(path)
+    output_path = os.fspath(output_path)
+    input_pdb = os.fspath(input_pdb)
+    if chainid_dict is None:
+        chainid_dict = {}
+
     traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
     traj.xyz -= traj.unitcell_lengths[0,:]/2
 
     if len(chainid_dict) > 0:
         name_1 = next(iter(chainid_dict))
-        if type(chainid_dict[name_1]) is int:
-            chainid_dict[name_1] = (chainid_dict[name_1], chainid_dict[name_1])
-        chainid_dict[name_1] = np.arange(chainid_dict[name_1][0], chainid_dict[name_1][1]+1)
+        chain_1_ids = chainid_dict[name_1]
+        if isinstance(chain_1_ids, int):
+            chain_1_ids = (chain_1_ids, chain_1_ids)
+        if isinstance(chain_1_ids, tuple):
+            chainid_dict[name_1] = np.arange(chain_1_ids[0], chain_1_ids[1]+1)
         if len(chainid_dict) > 1:
             name_2 = next(iter(list(chainid_dict.keys())[1:]))
-            if type(chainid_dict[name_2]) is int:
-                chainid_dict[name_2] = (chainid_dict[name_2], chainid_dict[name_2])
-            chainid_dict[name_2] = np.arange(chainid_dict[name_2][0], chainid_dict[name_2][1]+1)
+            chain_2_ids = chainid_dict[name_2]
+            if isinstance(chain_2_ids, int):
+                chain_2_ids = (chain_2_ids, chain_2_ids)
+            if isinstance(chain_2_ids, tuple):
+                chainid_dict[name_2] = np.arange(chain_2_ids[0], chain_2_ids[1]+1)
         else:
             # if homotypic cmap
             name_2 = name_1
@@ -1147,13 +1353,15 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         name_2 = name_1
         chainid_dict[name_1] = np.arange(traj.top.n_chains)
 
-    print(name_1)
-    print(chainid_dict[name_1])
-    print(name_2)
-    print(chainid_dict[name_2])
+    chain_indices = cast(dict[str, IntArray], chainid_dict)
 
-    N_res_1 = traj.top.chain(chainid_dict[name_1][0]).n_residues
-    N_res_2 = traj.top.chain(chainid_dict[name_2][0]).n_residues
+    print(name_1)
+    print(chain_indices[name_1])
+    print(name_2)
+    print(chain_indices[name_2])
+
+    N_res_1 = traj.top.chain(chain_indices[name_1][0]).n_residues
+    N_res_2 = traj.top.chain(chain_indices[name_2][0]).n_residues
 
     if is_slab:
         if not os.path.isfile(output_path+f'/{sysname:s}_ps_results.csv'):
@@ -1167,7 +1375,7 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         else:
             cmtraj = md.load_dcd(output_path+f'/{sysname:s}_com_traj.dcd',top=output_path+f'/{sysname:s}_com_top.pdb')
 
-        for chain_name, chainids in chainid_dict.items():
+        for chain_name, chainids in chain_indices.items():
             cm_z = cmtraj.xyz[:,chainids,2]
             mask_den = np.abs(cm_z) < z_den
             mask_dil = np.abs(cm_z) > z_dil
@@ -1177,18 +1385,20 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
         if name_2 == name_1:
             # if homotypic cmap, save a copy of all indices
             name_2 = name_1 + '_homotypic'
-            chainid_dict[name_2] = chainid_dict[name_1]
-        cm_z = cmtraj.xyz[:,chainid_dict[name_1],2]
+            chain_indices[name_2] = chain_indices[name_1]
+        cm_z = cmtraj.xyz[:,chain_indices[name_1],2]
         # per-frame central-chain indices
         ids_central = np.argmin(np.abs(cm_z),axis=1)
-        chainid_dict[name_1] = np.array([chainid_dict[name_1][idx] for idx in ids_central])
+        chain_indices[name_1] = np.array(
+            [chain_indices[name_1][idx] for idx in ids_central]
+        )
 
     cmap = np.zeros((N_res_1,N_res_2))
-    for chain_1 in np.unique(chainid_dict[name_1]):
-        surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in chainid_dict[name_2] if i != chain_1]))
+    for chain_1 in np.unique(chain_indices[name_1]):
+        surrounding_chains = traj.top.select(' or '.join([f'chainid {i:d}' for i in chain_indices[name_2] if i != chain_1]))
         pair_indices = traj.top.select_pairs(f'chainid {chain_1:d}',surrounding_chains)
         if is_slab:
-            mask_frames = np.where(chainid_dict[name_1] == chain_1)[0]
+            mask_frames = np.where(chain_indices[name_1] == chain_1)[0]
         else:
             mask_frames = np.arange(traj.n_frames)#, True, dtype=bool)
         if len(mask_frames) > 0:
