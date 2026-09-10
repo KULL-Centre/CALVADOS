@@ -42,12 +42,16 @@ class Component:
         """Initialize a component from explicit and default properties."""
         self.name = name
         self.params = params
+        self.start_bead: int | None = None
 
         self.comp_setup = "compact"
         self.dimensions: NDArray[np.float64] | None = None
 
         # read residue parameters from file
-        self.residues = read_csv(self.params.fresidues).set_index("one")
+        self.residues = read_csv(
+            self.params.fresidues,
+            dtype='object'
+        ).set_index("one")
     
     def calc_comp_seq(self) -> None:
         """Calculate the component sequence."""
@@ -177,7 +181,6 @@ class Component:
                 f.write(
                     f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n"
                 )
-
 
 class Protein(Component):
     """Represent a one-bead-per-residue protein component.

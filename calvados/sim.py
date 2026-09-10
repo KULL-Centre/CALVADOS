@@ -1,11 +1,11 @@
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Mapping, Any
 
 import mdtraj as md
 import numpy as np
 import openmm
-from Bio.SeqUtils import seq3
 from numpy.typing import NDArray
 from openmm import app, unit
 from tqdm import tqdm
@@ -13,8 +13,11 @@ from yaml import safe_load
 
 from calvados import build, interactions
 
-from .components import COMPONENT_REGISTRY, Component
-from .inputmodels import SimulationInput, validate_inputs
+from .components import (
+    COMPONENT_REGISTRY,
+    Component,
+)
+from .inputmodels import InputPath, SimulationInput, validate_inputs
 
 
 def _split_steps(steps: int, max_batches: int = 10) -> list[int]:
@@ -25,7 +28,12 @@ def _split_steps(steps: int, max_batches: int = 10) -> list[int]:
 
 
 class Sim:
-    def __init__(self,path,config,components):
+    def __init__(
+            self,
+            path: InputPath,
+            config: Mapping[str, Any],
+            components: Mapping[str, Any],
+        ) -> None:
         """
         simulate openMM Calvados;
         parameters are provided by config dictionary """
@@ -65,13 +73,13 @@ class Sim:
         if self.config.ext_force:
             self.rcent = openmm.CustomExternalForce(self.config.ext_force_expr)
 
-    def make_components(self):
+    def make_components(self) -> None:
         self.components: list[Component] = [] # np.empty(0)
         self.use_restraints = False
 
         for name, comp_params in self.comp_dict.items():
             component_class = COMPONENT_REGISTRY[comp_params.molecule_type]
-            comp: Component = component_class(name, comp_params)
+            comp = component_class(name, comp_params)
 
             comp.calc_properties(
                 pH=self.config.pH,
@@ -80,9 +88,9 @@ class Sim:
             )
             if comp.params.restraint:
                 self.use_restraints = True
-                comp.init_restraint_force()
+                comp.init_restraint_force() # type: ignore
                 if comp.params.restraint_type == 'go':
-                    comp.init_scaled_nonbonded(
+                    comp.init_scaled_nonbonded( # type: ignore
                         cutoff_lj=self.config.cutoff_lj,
                         cutoff_yu=self.config.cutoff_yu,
                         eps_yu=self.eps_yu,
@@ -91,7 +99,7 @@ class Sim:
             self.components.append(comp)
             # self.components = np.append(self.components, comp)
 
-    def count_components(self):
+    def count_components(self) -> None:
         """ Count components and molecules. """
 
         self.ncomponents: int = 0
@@ -106,7 +114,10 @@ class Sim:
         print(f'Total number of components in the system: {self.ncomponents}')
         print(f'Total number of molecules in the system: {self.nmolecules}')
 
-        if ((self.ncomponents > 1) or (self.nmolecules > 1)) and (self.config.topol in ['single', 'center']):
+        if (
+            ((self.ncomponents > 1) or (self.nmolecules > 1))
+                and (self.config.topol in ['single', 'center'])
+        ):
             raise ValueError("Topol 'single/center' incompatible with multiple molecules.")
 
         for comp in self.components:
@@ -114,7 +125,7 @@ class Sim:
             if comp.params.nmol > 0:
                 self.comp_types.add(comp.params.molecule_type)
 
-    def reorder_components(self):
+    def reorder_components(self) -> None:
         self.solute_types = ["protein", "rna", "cyclic", "seastar", "ptm_protein"]
         self.nsolutes = sum(
             self.nmols_per_comp_type.get(comp_type, 0)
@@ -133,7 +144,7 @@ class Sim:
 
         self.components = solute_components + non_solute_components
 
-    def build_system(self):
+    def build_system(self) -> None:
         """
         Set up system
         * component definitions
@@ -157,11 +168,16 @@ class Sim:
 
         # init interactions
         self.ah, self.yu = interactions.init_nonbonded_interactions(
-            self.eps_lj,self.cutoff_lj,self.eps_yu,self.k_yu,self.cutoff_yu,self.fixed_lambda
-            )
+            self.eps_lj,
+            self.config.cutoff_lj,
+            self.eps_yu,
+            self.k_yu,
+            self.config.cutoff_yu,
+            self.config.fixed_lambda,
+        )
         if "lipid" in self.comp_types:
             self.cos, self.cn = interactions.init_lipid_interactions(
-            self.eps_lj,self.eps_yu,self.cutoff_yu,factor=1.9
+            self.eps_lj,self.eps_yu,self.config.cutoff_yu,factor=1.9
             )
         if "cooke_lipid" in self.comp_types:
             if "lipid" in self.comp_types:
@@ -169,70 +185,99 @@ class Sim:
                     "lipid and cooke_lipid components cannot both be present"
                 )
             self.cos, self.cn = interactions.init_lipid_interactions(
-            self.eps_lj,self.eps_yu,self.cutoff_yu,factor=3.0
+            self.eps_lj,self.eps_yu,self.config.cutoff_yu,factor=3.0
             )
 
         self.nparticles = 0 # bead counter
         self.grid_counter = 0 # molecule counter for xy and xyz grids
 
-        self.pos = []
+        self.pos: list[float] = []
 
 
-        if self.topol == 'slab': # proteins + rna            
+        if self.config.topol == 'slab': # proteins + rna
+            assert self.config.slab_width is not None
             slab_box = np.array(
-                [self.box[0], self.box[1], self.slab_width], dtype=float
+                [self.box[0], self.box[1], self.config.slab_width], dtype=float
             )
             self.xyzgrid = build.build_xyzgrid(self.nsolutes, slab_box)
-            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.slab_width/2.])
+            self.xyzgrid += np.asarray([0,0,self.box[2]/2.-self.config.slab_width/2.])
             if "crowder" in self.comp_types: # crowder
                 crowder_box = np.array(
-                    [self.box[0], self.box[1], self.box[2]/2.-self.slab_outer],
+                    [self.box[0], self.box[1], self.box[2]/2.-self.config.slab_outer],
                     dtype=float,
                 )
-                xyzgrid = build.build_xyzgrid(np.ceil(self.nmols_per_comp_type["crowder"]/2.), crowder_box)
+                xyzgrid = build.build_xyzgrid(
+                    np.ceil(self.nmols_per_comp_type["crowder"]/2.),
+                    crowder_box,
+                )
                 self.xyzgrid = np.append(self.xyzgrid, xyzgrid, axis=0)
-                self.xyzgrid = np.append(self.xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.slab_outer]), axis=0)
-        elif self.topol == 'grid':
+                self.xyzgrid = np.append(
+                    self.xyzgrid,
+                    xyzgrid + np.asarray([0,0,self.box[2]/2.+self.config.slab_outer]),
+                    axis=0
+                )
+        elif self.config.topol == 'grid':
             self.xyzgrid = build.build_xyzgrid(self.nmolecules,self.box)
         if "lipid" in self.comp_types:
-            self.bilayergrid = build.build_xygrid(int(self.nmols_per_comp_type["lipid"]*1.05),self.box)
+            self.bilayergrid = build.build_xygrid(
+                int(self.nmols_per_comp_type["lipid"]*1.05),
+                self.box
+            )
             if self.nsolutes > 0:
                 outer_box = np.array(
                     [self.box[0], self.box[1], self.box[2]/2.-self.box[0]],
                     dtype=float,
                 )
                 xyzgrid = build.build_xyzgrid(np.ceil(self.nsolutes/2.), outer_box)
-                self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
+                self.xyzgrid = np.append(
+                    xyzgrid,
+                    xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]),
+                    axis=0
+                )
         if "cooke_lipid" in self.comp_types:
-            self.bilayergrid = build.build_xygrid(int(self.nmols_per_comp_type["cooke_lipid"]*1.05),self.box)
+            self.bilayergrid = build.build_xygrid(
+                int(self.nmols_per_comp_type["cooke_lipid"]*1.05),
+                self.box,
+            )
             if self.nsolutes > 0:
                 outer_box = np.array(
                     [self.box[0], self.box[1], self.box[2]/2.-self.box[0]],
                     dtype=float,
                 )
                 xyzgrid = build.build_xyzgrid(np.ceil(self.nsolutes/2.), outer_box)
-                self.xyzgrid = np.append(xyzgrid, xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]), axis=0)
+                self.xyzgrid = np.append(
+                    xyzgrid,
+                    xyzgrid + np.asarray([0,0,self.box[2]/2.+self.box[0]]),
+                    axis=0
+                )
 
         for cidx, comp in enumerate(self.components):
-            for idx in range(comp.nmol):
-                if self.verbose:
+            for idx in range(comp.params.nmol):
+                if self.config.verbose:
                     print(f'Component {cidx}, Molecule {idx}: {comp.name}')
                 # particle definitions
                 self.add_mdtraj_topol(comp)
                 self.add_particles_system(comp.mws)
 
                 # add interactions + restraints
-                if comp.params.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein','rna']:
-                    xs = self.place_molecule(comp)
+                if comp.params.molecule_type in [
+                    'protein',
+                    'crowder',
+                    'cyclic',
+                    'seastar',
+                    'ptm_protein',
+                    'rna',
+                ]:
+                    _ = self.place_molecule(comp)
                 elif comp.params.molecule_type in ['lipid','cooke_lipid']:
-                    xs = self.place_bilayer(comp)
+                    _ = self.place_bilayer(comp)
                 self.add_interactions(comp)
 
                 # add restraints towards box center
                 if (self.slab_eq or self.config.ext_force) and comp.params.ext_restraint:
                     self.add_ext_restraints(comp)
 
-        if self.custom_restraints:
+        if self.config.custom_restraints:
             self.map_custom_restraints()
             self.add_custom_restraints()
 
@@ -247,7 +292,7 @@ class Sim:
         self.add_forces_to_system()
         self.print_system_summary()
 
-    def add_forces_to_system(self):
+    def add_forces_to_system(self) -> None:
         """ Add forces to system. """
 
         # Intermolecular forces
@@ -263,8 +308,8 @@ class Sim:
             comp.get_forces() # bonded, angles, restraints...
             for force in comp.forces:
                 self.system.addForce(force)
-            if comp.restraint:
-                print(f'Number of restraints for comp {comp.name}: {comp.cs.getNumBonds()}')
+            if comp.params.restraint:
+                print(f'Number of restraints for comp {comp.name}: {comp.cs.getNumBonds()}') # type: ignore
 
         # External force
         if self.config.ext_force:
@@ -275,31 +320,45 @@ class Sim:
             self.system.addForce(self.rcent)
 
         # Custom forces
-        if self.custom_restraints:
+        if self.config.custom_restraints:
             self.system.addForce(self.cres)
             print(f'Number of custom restraints: {self.cres.getNumBonds()}')
 
         # Barostat force
         if self.box_eq:
+            assert self.config.pressure is not None
             barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
-                    [self.pressure[0]*unit.bar,self.pressure[1]*unit.bar,self.pressure[2]*unit.bar],
-                    self.config.temp*unit.kelvin,self.boxscaling_xyz[0],self.boxscaling_xyz[1],
-                    self.boxscaling_xyz[2],1000)
+                [
+                    self.config.pressure[0] * unit.bar,
+                    self.config.pressure[1] * unit.bar,
+                    self.config.pressure[2] * unit.bar
+                ],
+                self.config.temp*unit.kelvin,
+                self.config.boxscaling_xyz[0],
+                self.config.boxscaling_xyz[1],
+                self.config.boxscaling_xyz[2],
+                1000,
+            )
             self.system.addForce(barostat)
 
         # Bilayer eq. force
         if self.bilayer_eq:
-            barostat = openmm.openmm.MonteCarloMembraneBarostat(self.pressure[0]*unit.bar,
-                    0*unit.bar*unit.nanometer, self.config.temp*unit.kelvin,
-                    openmm.openmm.MonteCarloMembraneBarostat.XYIsotropic,
-                    openmm.openmm.MonteCarloMembraneBarostat.ZFixed, 10000)
+            assert self.config.pressure is not None
+            barostat = openmm.openmm.MonteCarloMembraneBarostat(
+                self.config.pressure[0] * unit.bar,
+                0.0 * unit.bar * unit.nanometer,
+                self.config.temp * unit.kelvin,
+                openmm.openmm.MonteCarloMembraneBarostat.XYIsotropic,
+                openmm.openmm.MonteCarloMembraneBarostat.ZFixed,
+                10000,
+            )
             self.system.addForce(barostat)
 
-    def print_system_summary(self, write_xml: bool = True):
+    def print_system_summary(self, write_xml: bool = True) -> None:
         """ Print system information and write xml. """
 
         if write_xml:
-            with open(f'{self.path}/{self.sysname}.xml', 'w') as output:
+            with open(f'{self.path}/{self.config.sysname}.xml', 'w') as output:
                 output.write(openmm.XmlSerializer.serialize(self.system))
 
         print(f'{self.nparticles} particles in the system')
@@ -310,49 +369,54 @@ class Sim:
             print(f'Equilibration restraints (rcent) towards box center in {self.config.slab_eq_axis} direction')
             print(f'rcent: {self.rcent.getNumParticles()} restraints')
         if self.bilayer_eq:
-            print(f'Equilibration under zero lateral tension')
+            print('Equilibration under zero lateral tension')
         if self.box_eq:
-            print(f'Equilibration through changes in box side lengths along '+' and '.join(np.array(['X','Y','Z'])[self.boxscaling_xyz]))
+            print('Equilibration through changes in box side lengths along '+' and '.join(np.array(['X','Y','Z'])[self.config.boxscaling_xyz]))
 
-    def place_molecule(self, comp: Component, ntries: int = 10000):
+    def place_molecule(
+            self,
+            comp: Component,
+            ntries: int = 10000
+        ) -> float:
         """
         Place proteins based on topology.
         """
 
-        if self.topol == 'slab':
+        if self.config.topol == 'slab':
             x0 = self.xyzgrid[self.grid_counter]
             # x0[2] = self.box[2] / 2. # center in z
             xs = x0 + comp.xinit
             self.grid_counter += 1
-        elif self.topol == 'grid':
+        elif self.config.topol == 'grid':
             x0 = self.xyzgrid[self.grid_counter]
             xs = x0 + comp.xinit
             self.grid_counter += 1
-        elif self.topol == 'center':
+        elif self.config.topol == 'center':
             x0 = self.box * 0.5 # place in center of box
             xs = x0 + comp.xinit
-        elif self.topol == 'shift_ref_bead':
+        elif self.config.topol == 'shift_ref_bead':
             x0 = self.box * 0.5 # place in center of box
             xs = x0 + comp.xinit
-            xs -= comp.xinit[self.ref_bead]
+            xs -= comp.xinit[self.config.ref_bead]
         else:
             xs_others = np.array(self.pos, dtype=float)
             xs = build.random_placement(self.box, xs_others, comp.xinit, ntries=ntries)
         for x in xs:
-            self.pos.append(x)
+            self.pos.append(float(x))
             self.nparticles += 1
-        return xs # positions of the comp (to be used for restraints)
+        return float(xs)
 
-    def place_bilayer(self, comp: Component, ntries: int = 10000):
+    def place_bilayer(self, comp: Component, ntries: int = 10000) -> NDArray[np.float64]:
         """
         Place proteins based on topology.
         """
-        #print('bilayergrid.shape',self.bilayergrid.shape)
+
         inserted = False
         attempts = 0
+        xs: NDArray[np.float64] | None = None
         while not inserted and attempts < ntries and self.bilayergrid.size > 0:
             attempts += 1
-            xs_others = np.array(self.pos, dtype=float)
+            xs_others = np.array(self.pos, dtype=np.float64)
             xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, xs_others, comp.xinit)
             if not inserted:
                 xs, inserted = build.build_xybilayer(self.bilayergrid[0], self.box, xs_others, comp.xinit, upward=False)
@@ -365,43 +429,50 @@ class Sim:
                 f"Could not place bilayer component {comp.name!r} after "
                 f"{attempts} attempts."
             )
+
+        assert xs is not None
         for x in xs:
             self.pos.append(x)
             self.nparticles += 1
         return xs # positions of the comp (to be used for restraints)
 
-    def add_bonds(self, comp, offset):
+    def add_bonds(self, comp: Component, offset: int) -> None:
         """ Add bond forces. """
 
         exclusion_map = comp.add_bonds(offset)
         self.add_exclusions(exclusion_map)
 
-    def add_angles(self, comp, offset):
+    def add_angles(self, comp: Component, offset: int) -> None:
         """ Add bond forces. """
 
-        exclusion_map = comp.add_angles(offset)
+        exclusion_map = comp.add_angles(offset) # type: ignore
         self.add_exclusions(exclusion_map)
 
-    def add_restraints(self, comp, offset, exclude_nonbonded = True):
+    def add_restraints(
+            self,
+            comp: Component,
+            offset: int,
+            exclude_nonbonded: bool = True,
+        ) -> None:
         """ Add restraints to single molecule. """
 
-        exclusion_map = comp.add_restraints(offset)
+        exclusion_map = comp.add_restraints(offset) # type: ignore
         if exclude_nonbonded: # exclude ah, yu when restraining
             self.add_exclusions(exclusion_map)
 
-    def add_custom_restraints(self, exclude_nonbonded = True):
+    def add_custom_restraints(self, exclude_nonbonded: bool = True) -> None:
         exclusion_map = []
         # self.custom_restr_pairs = []
-        self.cres = interactions.init_restraints(self.custom_restraint_type)
+        self.cres = interactions.init_restraints(self.config.custom_restraint_type)
         for i, j, r, k in self.custom_restr_abs: # i, j, r, k
             self.cres, restr_pair = interactions.add_single_restraint(
-                self.cres, self.custom_restraint_type, r, k, i, j)
+                self.cres, self.config.custom_restraint_type, r, k, i, j)
             # self.custom_restr_pairs.append(restr_pair)
             exclusion_map.append([i,j])
         if exclude_nonbonded: # exclude cres when restraining
             self.add_exclusions(exclusion_map)
 
-    def add_exclusions(self, exclusion_map):
+    def add_exclusions(self, exclusion_map: list[Any]) -> None:
         # exclude LJ, YU for restrained pairs
         for excl in exclusion_map:
             self.ah = interactions.add_exclusion(self.ah, excl[0], excl[1])
@@ -410,12 +481,13 @@ class Sim:
                 self.cos.addExclusion(excl[0], excl[1])
                 self.cn.addExclusion(excl[0], excl[1])
 
-    def add_interactions(self,comp):
+    def add_interactions(self, comp: Component) -> None:
         """
         Protein interactions for one molecule of composition comp
         """
 
-        offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
+        # Get indices of current comp in context of system
+        offset = self.nparticles - comp.nbeads 
 
         # Add Ashbaugh-Hatch
         for sig, lam in zip(comp.sigmas, comp.lambdas):
@@ -447,30 +519,30 @@ class Sim:
             self.add_angles(comp, offset)
 
         # Add restraints
-        if comp.restraint:
+        if comp.params.restraint:
             self.add_restraints(comp,offset)
 
         # write lists
-        if self.verbose:
+        if self.config.verbose:
             comp.write_bonds(self.path)
-            if comp.restraint:
-                comp.write_restraints(self.path)
+            if comp.params.restraint:
+                comp.write_restraints(self.path) # type: ignore
 
-    def add_ext_restraints(self,comp):
+    def add_ext_restraints(self, comp: Component) -> None:
         """ Add external-potential restraints. """
 
         offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
         for i in range(0,comp.nbeads):
             self.rcent.addParticle(i+offset)
 
-    def add_mdtraj_topol(self, comp):
+    def add_mdtraj_topol(self, comp: Component) -> None:
         """ Add one molecule to mdtraj topology. """
 
         # Note: Move this to component eventually.
         chain = self.top.add_chain()
 
         if comp.params.molecule_type == 'rna':
-            for idx,resname in enumerate(comp.seq):
+            for idx, resname in enumerate(comp.seq):
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom(resname+"P", element=md.element.phosphorus, residue=res)
                 self.top.add_atom(resname+"N", element=md.element.nitrogen, residue=res)
@@ -479,9 +551,9 @@ class Sim:
                     if comp.bond_check(i,j):
                         self.top.add_bond(chain.atom(i), chain.atom(j))
         else:
-            for idx,resname in enumerate(comp.seq):
+            for idx, resname in enumerate(comp.seq):
                 if comp.params.molecule_type in ['protein','crowder']:
-                    resname = comp.residues.loc[resname,'three']
+                    resname = str(comp.residues.loc[resname,'three'])
                 res = self.top.add_residue(resname, chain, resSeq=idx+1)
                 self.top.add_atom('CA', element=md.element.carbon, residue=res)
             for i in range(chain.n_atoms-1):
@@ -489,19 +561,19 @@ class Sim:
                     if comp.bond_check(i,j):
                         self.top.add_bond(chain.atom(i), chain.atom(j))
 
-    def add_particles_system(self,mws):
+    def add_particles_system(self, mws: NDArray[np.float64]) -> None:
         """ Add particles of one molecule to openMM system. """
 
         for mw in mws:
             self.system.addParticle(mw*unit.amu)
 
-    def map_custom_restraints(self):
+    def map_custom_restraints(self) -> None:
         """ Map input format for custom restraints to absolute bead number """
-        custom_restr = self.parse_custom_restraints(self.fcustom_restraints)
+        custom_restr = self.parse_custom_restraints(self.config.fcustom_restraints)
         total_beads = 0
         for comp in self.components:
             comp.start_bead = int(total_beads)
-            total_beads += comp.nmol * comp.nbeads
+            total_beads += comp.params.nmol * comp.nbeads
         self.custom_restr_abs = []
         components_by_name = {comp.name: comp for comp in self.components}
         for i,j,r,k in custom_restr:
@@ -515,16 +587,17 @@ class Sim:
                         f"Custom restraint component {name!r} is not in the system."
                     )
                 comp = components_by_name[name]
-                if not 1 <= copy <= comp.nmol:
+                if not 1 <= copy <= comp.params.nmol:
                     raise ValueError(
                         f"Custom restraint copy {copy} is outside the valid range "
-                        f"1-{comp.nmol} for component {name!r}."
+                        f"1-{comp.params.nmol} for component {name!r}."
                     )
                 if not 1 <= bead <= comp.nbeads:
                     raise ValueError(
                         f"Custom restraint bead {bead} is outside the valid range "
                         f"1-{comp.nbeads} for component {name!r}."
                     )
+                assert comp.start_bead is not None
                 x_abs = comp.start_bead + (copy-1)*comp.nbeads + (bead-1)
                 crestr.append(x_abs)
             crestr.append(float(r))
@@ -532,8 +605,8 @@ class Sim:
             self.custom_restr_abs.append(crestr)
 
     @staticmethod
-    def parse_custom_restraints(fcustom_restraints):
-        custom_restraints = []
+    def parse_custom_restraints(fcustom_restraints: InputPath) -> list[Any]:
+        custom_restraints: list[Any] = []
         with open(fcustom_restraints,'r') as f:
             for line in f.readlines():
                 spl = line.split('|')
@@ -550,7 +623,7 @@ class Sim:
                 custom_restraints.append(restr) # 1-based
         return custom_restraints
 
-    def simulate(self):
+    def simulate(self) -> None:
         """ Simulate. """
 
         fcheck_out = f'{self.path}/restart.chk'
@@ -565,8 +638,8 @@ class Sim:
 
         # use langevin integrator
         integrator = openmm.openmm.LangevinMiddleIntegrator(
-            self.config.temp*unit.kelvin,
-            self.config.friction_coeff/unit.picosecond,
+            self.config.temp * unit.kelvin,
+            self.config.friction_coeff / unit.picosecond,
             0.01*unit.picosecond
         )
         if self.config.random_number_seed is not None:
@@ -576,20 +649,33 @@ class Sim:
         # assemble simulation
         platform = openmm.Platform.getPlatformByName(self.config.platform)
         if self.config.platform == 'CPU':
-            simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.config.threads)))
+            simulation = app.simulation.Simulation(
+                pdb.topology,
+                self.system,
+                integrator,
+                platform,
+                dict(Threads=str(self.config.threads))
+            )
         else:
             if os.environ.get('CUDA_VISIBLE_DEVICES') is None:
-                platform.setPropertyDefaultValue('DeviceIndex',str(self.gpu_id))
-            simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
+                platform.setPropertyDefaultValue('DeviceIndex',str(self.config.gpu_id))
+            simulation = app.simulation.Simulation(
+                pdb.topology,
+                self.system,
+                integrator,
+                platform
+            )
         print('Running on', platform.getName())
 
         if (self.restart_path.is_file()) and (self.config.restart == 'checkpoint'):
-            if not os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'):
-                raise Exception(f'Did not find {self.path}/{self.sysname:s}.dcd trajectory to append to!')
+            if not os.path.isfile(f'{self.path}/{self.config.sysname:s}.dcd'):
+                raise Exception(
+                    f'Did not find {self.path}/{self.config.sysname:s}.dcd trajectory to append to!'
+                )
             append = True
             print(f'Reading checkpoint file {self.restart_path}')
-            print(f'Appending trajectory to {self.path}/{self.sysname:s}.dcd')
-            print(f'Appending log file to {self.path}/{self.sysname:s}.log')
+            print(f'Appending trajectory to {self.path}/{self.config.sysname:s}.dcd')
+            print(f'Appending log file to {self.path}/{self.config.sysname:s}.log')
             simulation.loadCheckpoint(self.restart_path)
         else:
             if self.config.restart in ['pdb','cif']:
@@ -599,19 +685,25 @@ class Sim:
             elif self.config.restart is None:
                 print('Starting from new system configuration')
 
-            if os.path.isfile(f'{self.path}/{self.sysname:s}.dcd'): # backup old dcd if not restarting from checkpoint
+            if os.path.isfile(f'{self.path}/{self.config.sysname:s}.dcd'): # backup old dcd if not restarting from checkpoint
                 now = datetime.now()
                 dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
-                print(f'Backing up existing {self.path}/{self.sysname:s}.dcd to {self.path}/backup_{self.sysname:s}_{dt_string}.dcd')
-                os.system(f'mv {self.path}/{self.sysname:s}.dcd {self.path}/backup_{self.sysname:s}_{dt_string}.dcd')
-            print(f'Writing trajectory to new file {self.path}/{self.sysname:s}.dcd')
+                print(f'Backing up existing {self.path}/{self.config.sysname:s}.dcd to {self.path}/backup_{self.config.sysname:s}_{dt_string}.dcd')
+                os.system(f'mv {self.path}/{self.config.sysname:s}.dcd {self.path}/backup_{self.config.sysname:s}_{dt_string}.dcd')
+            print(f'Writing trajectory to new file {self.path}/{self.config.sysname:s}.dcd')
             simulation.context.setPositions(pdb.positions)
             print('Minimizing energy.')
             simulation.minimizeEnergy()
 
         if self.slab_eq:
             print(f"Starting slab equilibration with k_eq == {self.config.k_eq:.4f} kJ/(mol*nm) for {self.config.steps_eq} steps", flush=True)
-            simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
+            simulation.reporters.append(
+                app.dcdreporter.DCDReporter(
+                    f'{self.path}/equilibration_{self.config.sysname:s}.dcd',
+                    self.config.wfreq,
+                    append=append,
+                )
+            )
             simulation.step(self.config.steps_eq)
             state_final = simulation.context.getState(getPositions=True)
             with open(f'{self.path}/equilibration_final.pdb', 'w') as f:
@@ -625,20 +717,41 @@ class Sim:
                     print(f'Removing external force {index}')
                     self.system.removeForce(index)
                     break
-            integrator = openmm.openmm.LangevinIntegrator(self.config.temp*unit.kelvin,self.config.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            integrator = openmm.openmm.LangevinIntegrator(
+                self.config.temp * unit.kelvin,
+                self.config.friction_coeff / unit.picosecond,
+                0.01 * unit.picosecond,
+            )
             if self.config.random_number_seed is not None:
                 integrator.setRandomNumberSeed(self.config.random_number_seed)
             if self.config.platform == 'CPU':
-                simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform, dict(Threads=str(self.config.threads)))
+                simulation = app.simulation.Simulation(
+                    pdb.topology,
+                    self.system,
+                    integrator,
+                    platform,
+                    dict(Threads=str(self.config.threads))
+                )
             else:
-                simulation = app.simulation.Simulation(pdb.topology, self.system, integrator, platform)
+                simulation = app.simulation.Simulation(
+                    pdb.topology,
+                    self.system,
+                    integrator,
+                    platform
+                )
             simulation.context.setPositions(pdb.positions)
             print(f'Minimizing energy.')
             simulation.minimizeEnergy()
 
         if self.box_eq or self.bilayer_eq:
             print(f"Starting pressure equilibration for {self.config.steps_eq} steps", flush=True)
-            simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/equilibration_{self.sysname:s}.dcd',self.wfreq,append=append))
+            simulation.reporters.append(
+                app.dcdreporter.DCDReporter(
+                    f'{self.path}/equilibration_{self.config.sysname:s}.dcd',
+                    self.config.wfreq,
+                    append=append,
+                )
+            )
             simulation.step(self.config.steps_eq)
             state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
             with open(f'{self.path}/equilibration_final.pdb', 'w') as f:
@@ -663,26 +776,62 @@ class Sim:
                         break
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            integrator = openmm.openmm.LangevinIntegrator(self.config.temp*unit.kelvin,self.config.friction_coeff/unit.picosecond,0.01*unit.picosecond)
+            integrator = openmm.openmm.LangevinIntegrator(
+                self.config.temp * unit.kelvin,
+                self.config.friction_coeff / unit.picosecond,
+                0.01 * unit.picosecond
+            )
             if self.config.random_number_seed is not None:
                 integrator.setRandomNumberSeed(self.config.random_number_seed)
             if self.config.platform == 'CPU':
-                simulation = app.simulation.Simulation(topology, self.system, integrator, platform, dict(Threads=str(self.config.threads)))
+                simulation = app.simulation.Simulation(
+                    topology,
+                    self.system,
+                    integrator,
+                    platform,
+                    dict(Threads=str(self.config.threads)),
+                )
             else:
-                simulation = app.simulation.Simulation(topology, self.system, integrator, platform)
+                simulation = app.simulation.Simulation(
+                    topology,
+                    self.system,
+                    integrator,
+                    platform,
+                )
             simulation.context.setPositions(state_final.getPositions())
             simulation.context.setPeriodicBoxVectors(a, b, c)
 
         # run simulation
-        simulation.reporters.append(app.dcdreporter.DCDReporter(f'{self.path}/{self.sysname:s}.dcd',self.wfreq,append=append))
-        simulation.reporters.append(app.statedatareporter.StateDataReporter(f'{self.path}/{self.sysname}.log',self.logfreq,
-                step=True,speed=True,elapsedTime=True,potentialEnergy=self.report_potential_energy,separator='\t',append=append))
+        simulation.reporters.append(
+            app.dcdreporter.DCDReporter(
+                f'{self.path}/{self.config.sysname:s}.dcd',
+                self.config.wfreq,
+                append=append,
+            )
+        )
+        simulation.reporters.append(
+            app.statedatareporter.StateDataReporter(
+                f'{self.path}/{self.config.sysname}.log',
+                self.config.logfreq,
+                step=True,
+                speed=True,
+                elapsedTime=True,
+                potentialEnergy=self.config.report_potential_energy,
+                separator='\t',
+                append=append,
+            )
+        )
 
         print("STARTING SIMULATION", flush=True)
-        if self.runtime is not None: # in hours
-            simulation.runForClockTime(self.runtime*unit.hour, checkpointFile=fcheck_out, checkpointInterval=30*unit.minute)
+        if self.config.runtime is not None: # in hours
+            simulation.runForClockTime(
+                self.config.runtime*unit.hour,
+                checkpointFile=fcheck_out,
+                checkpointInterval=30*unit.minute,
+            )
         else:
-            for batch in tqdm(_split_steps(self.steps), mininterval=1):
+            assert self.config.steps is not None
+            for batch in tqdm(_split_steps(self.config.steps), mininterval=1):
                 simulation.step(batch)
                 simulation.saveCheckpoint(fcheck_out)
 
@@ -691,13 +840,20 @@ class Sim:
         now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
-        state_final = simulation.context.getState(getPositions=True,enforcePeriodicBox=True)
+        state_final = simulation.context.getState(
+            getPositions=True,
+            enforcePeriodicBox=True,
+        )
         with open(f'{self.path}/checkpoint.pdb', 'w') as f:
             app.PDBFile.writeFile(simulation.topology, state_final.getPositions(), f)
         with open(f'{self.path}/checkpoint.cif', 'w') as f:
             app.PDBxFile.writeFile(simulation.topology, state_final.getPositions(), f)
 
-def run(path='.',fconfig='config.yaml',fcomponents='components.yaml'):
+def run(
+        path: InputPath = '.',
+        fconfig: InputPath = 'config.yaml',
+        fcomponents: InputPath = 'components.yaml'
+    ) -> Sim:
     with open(f'{path}/{fconfig}','r') as stream:
         config = safe_load(stream)
 
