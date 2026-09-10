@@ -2,15 +2,16 @@ import json
 import os
 from importlib import resources
 from time import sleep
+from typing import Any
 
 import yaml
 from jinja2 import Template
 from pydantic import BaseModel, TypeAdapter
 
-from .inputmodels import ComponentInput, JobInput, SimulationInput
+from .inputmodels import ComponentInput, JobInput, SimulationInput, InputPath
 
 
-def model_defaults(model: type[BaseModel]) -> dict:
+def model_defaults(model: type[BaseModel]) -> dict[str, Any]:
     """Return the defaults declared for non-required model fields."""
     return {
         name: field.get_default(call_default_factory=True)
@@ -19,7 +20,10 @@ def model_defaults(model: type[BaseModel]) -> dict:
     }
 
 
-def serialize_fields(model: type[BaseModel], values: dict) -> dict:
+def serialize_fields(
+        model: type[BaseModel],
+        values: dict[str, Any],
+) -> dict[str, Any]:
     """Validate and serialize selected model fields."""
     serialized = {}
     for name, value in values.items():
@@ -32,11 +36,16 @@ def serialize_fields(model: type[BaseModel], values: dict) -> dict:
 ###########################
 
 class Config:
-    def __init__(self,**params):
+    def __init__(self, **params: Any) -> None:
         validated = SimulationInput.model_validate(params)
         self.config = validated.model_dump(mode='json')
 
-    def write(self,path,name='config.yaml',analyses=''):
+    def write(
+        self,
+        path: InputPath,
+        name: InputPath = "config.yaml",
+        analyses: str = "",
+    ) -> None:
         """ Write config file. """
         self.name = name
 
@@ -45,7 +54,7 @@ class Config:
         self.write_runfile(path,analyses)
 
     @staticmethod
-    def write_runfile(path,analyses):
+    def write_runfile(path: InputPath, analyses: str) -> None:
         stream = """from calvados import sim
 from argparse import ArgumentParser
 
@@ -69,17 +78,20 @@ if __name__ == "__main__":
 ###########################
 
 class Components:
-    def __init__(self,**defaults):
+    def __init__(self, **defaults: Any) -> None:
         self.defaults = {**model_defaults(ComponentInput), **defaults}
         self.components = {
             'defaults': self.defaults,
             'system': {},
         }
 
-    def reset_components(self,**kwargs):
+    def reset_components(self, **kwargs: Any) -> None:
         self.components['system'] = {}
 
-    def add(self,name,**overrides):
+    def add(self,
+            name: str,
+            **overrides: Any
+    ) -> None:
         raw = {
             **self.defaults,
             **overrides,
@@ -94,7 +106,11 @@ class Components:
             key: values[key] for key in overrides
         }
 
-    def write(self,path,name='components.yaml'):
+    def write(
+            self,
+            path: InputPath,
+            name: InputPath = "components.yaml"
+        ) -> None:
         """ Write component file. """
         self.name = name
         with open(f'{path}/{name}','w') as stream:
@@ -103,13 +119,19 @@ class Components:
 ############################
 
 class Job:
-    def __init__(self,**kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         validated = JobInput.model_validate(kwargs)
         self.settings = validated.model_dump(mode='json')
         self.pkg_base = resources.files('calvados')
         self.settings['folder'] = f'{self.pkg_base}/data/templates'
 
-    def write(self,path,config,components,name='job.sh'):
+    def write(
+            self,
+            path: InputPath,
+            config: Config,
+            components: Components,
+            name: InputPath = 'job.sh'
+        ) -> None:
         """ Write PBS or SLURM job. """
         self.jobname = name
         file = f'{self.settings["folder"]}/{self.settings["template"]}'
@@ -123,7 +145,7 @@ class Job:
                 fcomponents=components.name,
                 path=path))
 
-    def submit(self,path,njobs=1):
+    def submit(self, path: InputPath, njobs: int = 1) -> None:
         if njobs > 1 and self.settings['batch_sys'] == 'PBS':
             raise Exception('Only single jobs supported with PBS.')
         for idx in range(njobs):
@@ -132,18 +154,3 @@ class Job:
             elif self.settings['batch_sys'] == 'PBS':
                 os.system(f'qsub {path}/{self.jobname}')
             sleep(0.5)
-
-############################
-
-def write_entry(uniprot,entry,pdb_folder):
-    with open(f'{pdb_folder}/{uniprot}_info.json','w') as f:
-        json.dump(entry,f)
-
-def load_ebi(uniprot,pdb_folder):
-    os.system(f'mkdir -p {pdb_folder}')
-    with os.popen(f'curl https://alphafold.ebi.ac.uk/api/prediction/{uniprot}') as f:
-        entry = f.read()
-    entry = json.loads(entry)[0]
-    os.system(f'curl -L {entry["pdbUrl"]} -o {pdb_folder}/{uniprot}.pdb')
-    os.system(f'curl -L {entry["paeDocUrl"]} -o {pdb_folder}/{uniprot}.json')
-    write_entry(uniprot,entry,pdb_folder)

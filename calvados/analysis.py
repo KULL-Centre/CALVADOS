@@ -1,7 +1,4 @@
-import math
 import os
-import sys
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
@@ -18,11 +15,8 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.stats import sem
 from tqdm import tqdm
 
-from calvados.build import get_ssdomains
-
-PACKAGEDIR = Path(__file__).parent.absolute()
-sys.path.append(f'{str(PACKAGEDIR):s}/BLOCKING')
-from main import BlockAnalysis
+from .BLOCKING.main import BlockAnalysis
+from .build import get_ssdomains
 
 
 def center_traj(pdb,traj,start=None,stop=None,step=1):

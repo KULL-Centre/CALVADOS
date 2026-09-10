@@ -403,7 +403,8 @@ def bfac_from_pdb(
     with catch_warnings():
         simplefilter("ignore")
         u = Universe(str(pdb))
-    bfac = np.zeros((len(u.residues)))
+
+    bfac = np.zeros(len(u.residues))
     for idx, res in enumerate(u.residues):
         bfac[idx] = np.mean(res.atoms.tempfactors)  # average b-factor for residue
     bfac = np.where(bfac > confidence, bfac, 0.0) / 100.0  # high confidence filter
@@ -415,7 +416,7 @@ def load_pae_inv(
     cutoff: float = 0.1,
     colabfold: Literal[0, 1, 2] = 0,
     symmetrize: bool = True,
-) -> NDArray:
+) -> NDArray[np.float64]:
     """Load an AlphaFold PAE matrix and return its thresholded inverse."""
     pae = load_pae(input_pae, colabfold=colabfold, symmetrize=symmetrize)
     pae = np.where(pae < 1.0, 1, pae)  # avoid division by zero (for i = j), min to 1
@@ -428,7 +429,7 @@ def load_pae(
     input_pae: InputPath,
     colabfold: Literal[0, 1, 2] = 0,
     symmetrize: bool = True,
-) -> NDArray:
+) -> NDArray[np.float64]:
     """Load an AlphaFold PAE matrix from JSON."""
     if colabfold not in [0, 1, 2]:
         raise ValueError("colabfold must be 0, 1, or 2.")
@@ -492,14 +493,19 @@ def check_ssdomain(
     return False
 
 
-def conc_to_n(cinp: float, p: float, V: float, mw: float) -> float:
+def conc_to_n(
+        cinp: float,
+        p: float,
+        V: float,
+        mw: float
+    ) -> float:
     """Convert concentration in g/L and volume in nm³ to molecule count."""
-    return p * 1e-24 * 1 / mw * cinp * V * constants.N_A
+    return p * 1e-24 * 1 / mw * cinp * V * float(constants.N_A)
 
 
 def n_to_conc(n: float, V: float, mw: float) -> float:
     """Convert molecule count and volume in nm³ to concentration in g/L."""
-    return n * mw * 1 / constants.N_A * 1e24 * 1 / V
+    return n * mw * 1 / float(constants.N_A) * 1e24 * 1 / V
 
 
 def calc_pair_n_in_box(
