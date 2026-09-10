@@ -1,8 +1,8 @@
 import os
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from typing import Any
 from openmm.openmm import Force
 from openmm.unit import (
     dimensionless,
@@ -13,8 +13,7 @@ from openmm.unit import (
 from pandas import read_csv
 from scipy.special import expit
 
-from calvados import build, interactions
-
+from . import build, interactions
 from .analysis import self_distances
 from .inputmodels import ComponentInput, InputPath
 from .sequence import (
@@ -358,12 +357,23 @@ class Protein(Component):
                     # add scaled pseudo LJ, YU for low restraints
                     if self.scale[i, j] < cutoff_mix_in_LJYU:  # but >= min_scale
                         self.scLJ, scaled_pair = interactions.add_scaled_lj(
-                            self.scLJ, i, j, offset, self
+                            self.scLJ,
+                            i,
+                            j,
+                            offset,
+                            self.sigmas,
+                            self.lambdas,
+                            self.bondscale,
                         )
                         self.scLJ_pairlist.append(scaled_pair)
                         if self.qs[i] * self.qs[j] != 0.0:
                             self.scYU, scaled_pair = interactions.add_scaled_yu(
-                                self.scYU, i, j, offset, self
+                                self.scYU,
+                                i,
+                                j,
+                                offset,
+                                self.qs,
+                                self.bondscale,
                             )
                             self.scYU_pairlist.append(scaled_pair)
                 else:

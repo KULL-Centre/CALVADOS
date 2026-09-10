@@ -25,7 +25,7 @@ MoleculeType: TypeAlias = Literal[
     "ptm_protein",
 ]
 
-InputPath: TypeAlias = PathLike | str
+InputPath: TypeAlias = PathLike[str] | str
 RestraintChoices: TypeAlias = Literal["harmonic", "go"]
 TopolType: TypeAlias = Literal[
     "single",

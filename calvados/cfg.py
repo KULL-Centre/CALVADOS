@@ -7,7 +7,7 @@ import yaml
 from jinja2 import Template
 from pydantic import BaseModel, TypeAdapter
 
-from calvados.inputmodels import ComponentInput, JobInput, SimulationInput
+from .inputmodels import ComponentInput, JobInput, SimulationInput
 
 
 def model_defaults(model: type[BaseModel]) -> dict:

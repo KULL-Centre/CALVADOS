@@ -4,8 +4,7 @@ import os
 import random
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
-from os import PathLike
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast
 
 import numba as nb
 import numpy as np
@@ -20,14 +19,19 @@ from openmm import app
 from pandas import DataFrame
 from scipy.integrate import quad
 
+from .inputmodels import InputPath
+
 FloatArray: TypeAlias = NDArray[np.float64]
 PairMap: TypeAlias = Mapping[tuple[str, str], float]
-InputPath: TypeAlias = PathLike | str
+
 
 ### SEQUENCE INPUT / OUTPUT
 def read_fasta(ffasta: InputPath) -> dict[str, SeqRecord]:
     """Read a FASTA file into a dictionary keyed by record ID."""
-    return SeqIO.to_dict(SeqIO.parse(ffasta, "fasta"))
+    return cast(
+        dict[str, SeqRecord],
+        SeqIO.to_dict(SeqIO.parse(ffasta, "fasta")), # type: ignore
+    )
 
 
 def seq_from_pdb(
@@ -74,7 +78,7 @@ def write_fasta(new_records: Iterable[SeqRecord], fout: InputPath) -> None:
         SeqIO.write(new_records, fout, "fasta")
         return
 
-    records = list(SeqIO.parse(fout, "fasta"))
+    records = list(SeqIO.parse(fout, "fasta")) # type: ignore
     ids = {record.id for record in records}
     records.extend(record for record in new_records if record.id not in ids)
     SeqIO.write(records, fout, "fasta")
@@ -227,11 +231,11 @@ def calc_mw(fasta: Iterable[str], residues: DataFrame | None = None) -> float:
     """Calculate the molecular weight of a sequence in daltons."""
     seq = "".join(fasta)
     if residues is None:
-        return SeqUtils.molecular_weight(seq, seq_type="protein")
+        return float(SeqUtils.molecular_weight(seq, seq_type="protein")) # type: ignore
 
-    mw = 0.0
+    mw: float = 0.0
     for s in seq:
-        mw += residues.loc[s, "MW"]
+        mw += float(residues.at[s, "MW"])
     return mw
 
 

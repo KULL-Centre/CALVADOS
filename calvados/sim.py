@@ -1,7 +1,8 @@
 import os
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Mapping, Any
+from typing import Any
 
 import mdtraj as md
 import numpy as np
@@ -11,8 +12,7 @@ from openmm import app, unit
 from tqdm import tqdm
 from yaml import safe_load
 
-from calvados import build, interactions
-
+from . import build, interactions
 from .components import (
     COMPONENT_REGISTRY,
     Component,
@@ -324,35 +324,35 @@ class Sim:
             self.system.addForce(self.cres)
             print(f'Number of custom restraints: {self.cres.getNumBonds()}')
 
-        # Barostat force
+        # unit.barostat force
         if self.box_eq:
             assert self.config.pressure is not None
-            barostat = openmm.openmm.MonteCarloAnisotropicBarostat(
+            unit.barostat = openmm.MonteCarloAnisotropicunit.barostat(
                 [
                     self.config.pressure[0] * unit.bar,
                     self.config.pressure[1] * unit.bar,
                     self.config.pressure[2] * unit.bar
                 ],
-                self.config.temp*unit.kelvin,
+                self.config.temp * unit.kelvin,
                 self.config.boxscaling_xyz[0],
                 self.config.boxscaling_xyz[1],
                 self.config.boxscaling_xyz[2],
                 1000,
             )
-            self.system.addForce(barostat)
+            self.system.addForce(unit.barostat)
 
         # Bilayer eq. force
         if self.bilayer_eq:
             assert self.config.pressure is not None
-            barostat = openmm.openmm.MonteCarloMembraneBarostat(
+            unit.barostat = openmm.MonteCarloMembraneunit.barostat(
                 self.config.pressure[0] * unit.bar,
                 0.0 * unit.bar * unit.nanometer,
                 self.config.temp * unit.kelvin,
-                openmm.openmm.MonteCarloMembraneBarostat.XYIsotropic,
-                openmm.openmm.MonteCarloMembraneBarostat.ZFixed,
+                openmm.MonteCarloMembraneunit.barostat.XYIsotropic,
+                openmm.MonteCarloMembraneunit.barostat.ZFixed,
                 10000,
             )
-            self.system.addForce(barostat)
+            self.system.addForce(unit.barostat)
 
     def print_system_summary(self, write_xml: bool = True) -> None:
         """ Print system information and write xml. """
@@ -637,7 +637,7 @@ class Sim:
             pdb = app.PDBxFile(self.cif_cg)
 
         # use langevin integrator
-        integrator = openmm.openmm.LangevinMiddleIntegrator(
+        integrator = openmm.LangevinMiddleIntegrator(
             self.config.temp * unit.kelvin,
             self.config.friction_coeff / unit.picosecond,
             0.01*unit.picosecond
@@ -717,7 +717,7 @@ class Sim:
                     print(f'Removing external force {index}')
                     self.system.removeForce(index)
                     break
-            integrator = openmm.openmm.LangevinIntegrator(
+            integrator = openmm.LangevinIntegrator(
                 self.config.temp * unit.kelvin,
                 self.config.friction_coeff / unit.picosecond,
                 0.01 * unit.picosecond,
@@ -766,17 +766,17 @@ class Sim:
                 print(index,force)
             if not self.config.pressure_coupling:
                 for index, force in enumerate(self.system.getForces()):
-                    if isinstance(force, openmm.openmm.MonteCarloMembraneBarostat):
-                        print(f'Removing barostat {index}')
+                    if isinstance(force, openmm.MonteCarloMembraneunit.barostat):
+                        print(f'Removing unit.barostat {index}')
                         self.system.removeForce(index)
                         break
-                    if isinstance(force, openmm.openmm.MonteCarloAnisotropicBarostat):
-                        print(f'Removing barostat {index}')
+                    if isinstance(force, openmm.MonteCarloAnisotropicunit.barostat):
+                        print(f'Removing unit.barostat {index}')
                         self.system.removeForce(index)
                         break
             for index, force in enumerate(self.system.getForces()):
                 print(index,force)
-            integrator = openmm.openmm.LangevinIntegrator(
+            integrator = openmm.LangevinIntegrator(
                 self.config.temp * unit.kelvin,
                 self.config.friction_coeff / unit.picosecond,
                 0.01 * unit.picosecond
@@ -823,9 +823,9 @@ class Sim:
         )
 
         print("STARTING SIMULATION", flush=True)
-        if self.config.runtime is not None: # in hours
+        if self.config.runtime is not None: # in unit.hours
             simulation.runForClockTime(
-                self.config.runtime*unit.hour,
+                self.config.runtime*unit.unit.hour,
                 checkpointFile=fcheck_out,
                 checkpointInterval=30*unit.minute,
             )

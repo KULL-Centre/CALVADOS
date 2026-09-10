@@ -1,11 +1,12 @@
 import numpy as np
+from numpy.typing import NDArray
 
 
-def xconv(x,N=5):
+def xconv(x: NDArray[np.float64], N: int = 5):
     xf = np.convolve(x, np.ones(N)/N, mode='same')
     return xf
 
-def autocorr(x,norm=True):
+def autocorr(x: NDArray[np.float64], norm: bool = True):
     y = x.copy()
     if norm:
         x = (x - np.mean(x)) / (np.std(x) * len(x))
@@ -14,7 +15,7 @@ def autocorr(x,norm=True):
     c = c[len(c)//2:]
     return c
 
-def calc_runavg(xs,N=10):
+def calc_runavg(xs: NDArray[np.float64], N: int = 10):
     xs_ravg = []
     for idx, x in enumerate(range(len(xs))):
         # if x == np.nan:

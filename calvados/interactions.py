@@ -3,7 +3,12 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from openmm import openmm, unit
+from openmm import openmm
+from openmm.unit import (
+    dimensionless,
+    kilojoules_per_mole,
+    nanometer,  # pyright: ignore[reportAttributeAccessIssue]
+)
 
 RestType = Literal['harmonic', 'go']
 
@@ -11,7 +16,6 @@ GAS_CONSTANT = 8.3145  # J mol^-1 K^-1
 ELEMENTARY_CHARGE = 1.6021766  # 10^-19 C
 VACUUM_PERMITTIVITY = 8.854188  # 10^-12 F m^-1
 AVOGADRO_CONSTANT = 6.02214076  # 10^23 mol^-1
-
 
 def _calc_relative_permittivity(temp: float) -> float:
     """Calculate the relative permittivity of water at a temperature in K."""
@@ -81,11 +85,11 @@ def init_ah_interactions(
     ah.addPerParticleParameter('id')
 
     ah.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
-    ah.setCutoffDistance(rc*unit.nanometer)
+    ah.setCutoffDistance(rc*nanometer)
     ah.setForceGroup(0)
 
-    print('Ashbaugh-Hatch potential between particles with lambda=1 and sigma=0.68 at',rc*unit.nanometer,end=': ')
-    print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*unit.kilojoules_per_mole)
+    print('Ashbaugh-Hatch potential between particles with lambda=1 and sigma=0.68 at',rc*nanometer,end=': ')
+    print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*kilojoules_per_mole)
     return ah
 
 def init_yu_interactions(
@@ -101,11 +105,11 @@ def init_yu_interactions(
     yu = openmm.CustomNonbondedForce(energy_expression)
     yu.addPerParticleParameter('q')
 
-    print('Debye-Hückel potential between unit charges at',rc*unit.nanometer,end=': ')
-    print(eps*shift*unit.kilojoules_per_mole)
+    print('Debye-Hückel potential between unit charges at',rc*nanometer,end=': ')
+    print(eps*shift*kilojoules_per_mole)
 
     yu.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
-    yu.setCutoffDistance(rc*unit.nanometer)
+    yu.setCutoffDistance(rc*nanometer)
     yu.setForceGroup(1)
 
     return yu
@@ -181,8 +185,8 @@ def init_scaled_LJ(eps_lj: float, cutoff_lj: float) -> openmm.CustomBondForce:
         '; shift=(s/rc)^12-(s/rc)^6'
     )
     scLJ = openmm.CustomBondForce(energy_expression)
-    scLJ.addGlobalParameter('eps',eps_lj*unit.kilojoules_per_mole)
-    scLJ.addGlobalParameter('rc',float(cutoff_lj)*unit.nanometer)
+    scLJ.addGlobalParameter('eps',eps_lj*kilojoules_per_mole)
+    scLJ.addGlobalParameter('rc',float(cutoff_lj)*nanometer)
     scLJ.addPerBondParameter('s')
     scLJ.addPerBondParameter('l')
     scLJ.addPerBondParameter('n')
@@ -223,11 +227,11 @@ def init_slab_restraints(
 
     rcent_expr = f'k*abs(periodicdistance(x,y,z,{x},{y},{z}))'
     rcent = openmm.CustomExternalForce(rcent_expr)
-    rcent.addGlobalParameter('k',k*unit.kilojoules_per_mole/unit.nanometer)
+    rcent.addGlobalParameter('k',k*kilojoules_per_mole/nanometer)
 
     for idx, a0 in enumerate([x,y,z]):
         if axis[idx]:
-            rcent.addGlobalParameter(a0,box[idx]/2.*unit.nanometer) # center of box in axis dim.
+            rcent.addGlobalParameter(a0,box[idx]/2.*nanometer) # center of box in axis dim.
     return rcent
 
 def add_single_restraint(
@@ -240,36 +244,49 @@ def add_single_restraint(
 
     if restraint_type == 'harmonic':
         cs.addBond(
-                i,j, dij*unit.nanometer,
-                k*unit.kilojoules_per_mole/(unit.nanometer**2))
+                i,j, dij*nanometer,
+                k*kilojoules_per_mole/(nanometer**2))
     elif restraint_type == 'go':
         cs.addBond(
-                i,j, [dij*unit.nanometer,
-                k*unit.kilojoules_per_mole])
+            i,
+            j,
+            [dij * nanometer, k * kilojoules_per_mole],
+        )
     else:
         raise ValueError("restraint_type must be harmonic or go")
     restr_pair = [i+1, j+1, dij, k] # 1-based
     return cs, restr_pair
 
 def add_scaled_lj(
-    scLJ: openmm.CustomBondForce, i: int, j: int, offset: int, comp
+    scLJ: openmm.CustomBondForce,
+    i: int,
+    j: int,
+    offset: int,
+    sigmas: NDArray[np.float64],
+    lambdas: NDArray[np.float64],
+    bondscale: NDArray[np.float64],
 ) -> tuple[openmm.CustomBondForce, list[int | float]]:
     """Add one scaled Ashbaugh-Hatch bond and its one-based record."""
 
-    s = 0.5 * (comp.sigmas[i] + comp.sigmas[j])
-    l = 0.5 * (comp.lambdas[i] + comp.lambdas[j])
-    scLJ.addBond(i+offset,j+offset, [s*unit.nanometer, l*unit.dimensionless, comp.bondscale[i,j]*unit.dimensionless])
-    scaled_pair = [i+offset+1, j+offset+1, s, l, comp.bondscale[i,j]] # 1-based
+    s = 0.5 * (sigmas[i] + sigmas[j])
+    l = 0.5 * (lambdas[i] + lambdas[j])
+    scLJ.addBond(i+offset,j+offset, [s*nanometer, l*dimensionless, bondscale[i,j]*dimensionless])
+    scaled_pair = [i+offset+1, j+offset+1, s, l, bondscale[i,j]] # 1-based
     return scLJ, scaled_pair
 
 def add_scaled_yu(
-    scYU: openmm.CustomBondForce, i: int, j: int, offset: int, comp
+    scYU: openmm.CustomBondForce,
+    i: int,
+    j: int,
+    offset: int,
+    qs: NDArray[np.float64],
+    bondscale: NDArray[np.float64],
 ) -> tuple[openmm.CustomBondForce, list[int | float]]:
     """Add one scaled Yukawa bond and its one-based record."""
 
-    qij = comp.qs[i] * comp.qs[j] * unit.dimensionless
-    scYU.addBond(i+offset, j+offset, [qij, comp.bondscale[i,j]*unit.dimensionless])
-    scaled_pair = [i+offset+1, j+offset+1, comp.bondscale[i,j]] # 1-based
+    qij = qs[i] * qs[j] * dimensionless
+    scYU.addBond(i+offset, j+offset, [qij, bondscale[i,j]*dimensionless])
+    scaled_pair = [i+offset+1, j+offset+1, bondscale[i,j]] # 1-based
     return scYU, scaled_pair
 
 def add_exclusion(
@@ -317,7 +334,7 @@ def init_cosine_interactions(eps: float) -> openmm.CustomNonbondedForce:
     cosine.addPerParticleParameter('l')
     cosine.addPerParticleParameter('id')
     cosine.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
-    cosine.setCutoffDistance((2**(1/6)+1.5)*unit.nanometer)
+    cosine.setCutoffDistance((2**(1/6)+1.5)*nanometer)
     cosine.setForceGroup(2)
     return cosine
 
@@ -336,6 +353,6 @@ def init_charge_nonpolar_interactions(
     cn.addPerParticleParameter('q')
     cn.addPerParticleParameter('id')
     cn.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
-    cn.setCutoffDistance(rc*unit.nanometer)
+    cn.setCutoffDistance(rc*nanometer)
     cn.setForceGroup(1)
     return cn
