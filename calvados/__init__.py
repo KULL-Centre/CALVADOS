@@ -1,11 +1,19 @@
-import calvados.analysis
-import calvados.build
-import calvados.cfg
-import calvados.interactions
-import calvados.sequence
-import calvados.sim
-import calvados.utilities
-import calvados.components
+from . import analysis as analysis
+from . import build as build
+from . import cfg as cfg
+from . import components as components
+from . import interactions as interactions
+from . import sequence as sequence
+from . import sim as sim
+from . import utilities as utilities
 
-# from pathlib import Path
-# PACKAGEDIR = Path(__file__).parent.absolute()
+__all__ = [
+    "analysis",
+    "build",
+    "cfg",
+    "components",
+    "interactions",
+    "sequence",
+    "sim",
+    "utilities",
+]
