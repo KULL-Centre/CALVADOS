@@ -119,12 +119,12 @@ def lj_potential(r: float, sig: float, eps: float) -> float:
     return ulj
 
 @nb.jit(nopython=True)
-def ah_potential(r: float, sig: float, eps: float, l: float, rc: float) -> float:
+def ah_potential(r: float, sig: float, eps: float, lam: float, rc: float) -> float:
     """Return the shifted, cutoff Ashbaugh-Hatch energy at separation ``r``."""
     if r <= 2**(1./6.)*sig:
-        ah = lj_potential(r,sig,eps) - l * lj_potential(rc,sig,eps) + eps * (1 - l)
+        ah = lj_potential(r,sig,eps) - lam * lj_potential(rc,sig,eps) + eps * (1 - lam)
     elif r <= rc:
-        ah = l * (lj_potential(r,sig,eps) - lj_potential(rc,sig,eps))
+        ah = lam * (lj_potential(r,sig,eps) - lj_potential(rc,sig,eps))
     else:
         ah = 0.
     return ah
@@ -987,11 +987,11 @@ class SlabAnalysis:
         # calculate traj of chain COM
         cmtop = md.Topology()
         xyz = np.empty((traj.n_frames,n_chains,3))
-        for chain_name in chain_prop.keys():
+        for chain_name in chain_prop:
             print(chain_name)
             for chainid in chain_prop[chain_name]['ids']:
                 print(chainid)
-                chain = traj.top.chain(chainid)
+                _ = traj.top.chain(chainid)
                 mws = chain_prop[chain_name]['MWs']
                 new_chain = cmtop.add_chain()
                 res = cmtop.add_residue('COM', new_chain, resSeq=chainid)
@@ -1315,13 +1315,13 @@ def calc_com_traj(
     # calculate traj of chain COM
     cmtop = md.Topology()
     xyz = np.empty((traj.n_frames,n_chains,3))
-    for chain_name in chain_prop.keys():
+    for chain_name in chain_prop:
         if verbose:
             print(chain_name)
         for chainid in chain_prop[chain_name]['ids']:
             if verbose:
                 print(chainid)
-            chain = traj.top.chain(chainid)
+            _ = traj.top.chain(chainid)
             mws = chain_prop[chain_name]['MWs']
             new_chain = cmtop.add_chain()
             res = cmtop.add_residue('COM', new_chain, resSeq=chainid)
@@ -1336,7 +1336,7 @@ def calc_com_traj(
             xyz[:,new_chain.index,:] = com
     cmtraj = md.Trajectory(xyz, cmtop, traj.time, traj.unitcell_lengths, traj.unitcell_angles)
 
-    for chain_name in chain_prop.keys():
+    for chain_name in chain_prop:
         np.save(output_path+f'/{sysname:s}_{chain_name:s}_rg.npy',np.asarray(chain_prop[chain_name]['rgs']).T)
 
     # calculate radial distribution function

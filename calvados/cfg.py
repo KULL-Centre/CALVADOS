@@ -1,4 +1,3 @@
-import json
 import os
 from importlib import resources
 from time import sleep
@@ -8,7 +7,7 @@ import yaml
 from jinja2 import Template
 from pydantic import BaseModel, TypeAdapter
 
-from .inputmodels import ComponentInput, JobInput, SimulationInput, InputPath
+from .inputmodels import ComponentInput, InputPath, JobInput, SimulationInput
 
 
 def model_defaults(model: type[BaseModel]) -> dict[str, Any]:

@@ -242,9 +242,9 @@ def calc_mw(fasta: Iterable[str], residues: DataFrame | None = None) -> float:
 ### SEQUENCE MANIPULATION
 def shuffle_str(seq: str | Sequence[str]) -> str:
     """Return a randomly shuffled copy of a sequence."""
-    l = list(seq)
-    random.shuffle(l)
-    return "".join(l)
+    seqlist = list(seq)
+    random.shuffle(seqlist)
+    return "".join(seqlist)
 
 
 def construct_maxdipseq(seq: str) -> str:
@@ -275,20 +275,20 @@ def lj_potential(r: float, sig: float, eps: float) -> float:
 
 
 @nb.jit(nopython=True)
-def ah_potential(r: float, sig: float, eps: float, l: float, rc: float) -> float:
+def ah_potential(r: float, sig: float, eps: float, lam: float, rc: float) -> float:
     """Evaluate the shifted Ashbaugh-Hatch potential."""
     if r <= 2 ** (1.0 / 6.0) * sig:
         return (
-            lj_potential(r, sig, eps) - l * lj_potential(rc, sig, eps) + eps * (1 - l)
+            lj_potential(r, sig, eps) - lam * lj_potential(rc, sig, eps) + eps * (1 - lam)
         )
     if r <= rc:
-        return l * (lj_potential(r, sig, eps) - lj_potential(rc, sig, eps))
+        return lam * (lj_potential(r, sig, eps) - lj_potential(rc, sig, eps))
     return 0.0
 
 
-def ah_scaled(r: float, sig: float, eps: float, l: float, rc: float) -> float:
+def ah_scaled(r: float, sig: float, eps: float, lam: float, rc: float) -> float:
     """Scale the Ashbaugh-Hatch potential by the spherical volume element."""
-    return ah_potential(r, sig, eps, l, rc) * 4 * np.pi * r**2
+    return ah_potential(r, sig, eps, lam, rc) * 4 * np.pi * r**2
 
 
 def make_ah_intgrl_map(
@@ -300,9 +300,9 @@ def make_ah_intgrl_map(
         sig0, l0 = val0["sigmas"], val0["lambdas"]
         for key1, val1 in residues.iterrows():
             sig1, l1 = val1["sigmas"], val1["lambdas"]
-            sig, l = 0.5 * (sig0 + sig1), 0.5 * (l0 + l1)
+            sig, lam = 0.5 * (sig0 + sig1), 0.5 * (l0 + l1)
             integral = quad(
-                lambda r, sig=sig, l=l: ah_scaled(r, sig, eps, l, rc),
+                lambda r, sig=sig, lam=lam: ah_scaled(r, sig, eps, lam, rc),
                 2 ** (1.0 / 6.0) * sig,
                 rc,
             )[0]
@@ -318,9 +318,9 @@ def make_lambda_map(residues: DataFrame) -> dict[tuple[str, str], float]:
         l0 = val0["lambdas"]
         for key1, val1 in residues.iterrows():
             l1 = val1["lambdas"]
-            l = l0 + l1
-            lambda_map[(key0, key1)] = l
-            lambda_map[(key1, key0)] = l
+            lam = l0 + l1
+            lambda_map[(key0, key1)] = lam
+            lambda_map[(key1, key0)] = lam
     return lambda_map
 
 

@@ -268,10 +268,10 @@ def add_scaled_lj(
 ) -> tuple[openmm.CustomBondForce, list[int | float]]:
     """Add one scaled Ashbaugh-Hatch bond and its one-based record."""
 
-    s = 0.5 * (sigmas[i] + sigmas[j])
-    l = 0.5 * (lambdas[i] + lambdas[j])
-    scLJ.addBond(i+offset,j+offset, [s*nanometer, l*dimensionless, bondscale[i,j]*dimensionless])
-    scaled_pair = [i+offset+1, j+offset+1, s, l, bondscale[i,j]] # 1-based
+    sig = 0.5 * (sigmas[i] + sigmas[j])
+    lam = 0.5 * (lambdas[i] + lambdas[j])
+    scLJ.addBond(i+offset,j+offset, [sig*nanometer, lam*dimensionless, bondscale[i,j]*dimensionless])
+    scaled_pair = [i+offset+1, j+offset+1, sig, lam, bondscale[i,j]] # 1-based
     return scLJ, scaled_pair
 
 def add_scaled_yu(

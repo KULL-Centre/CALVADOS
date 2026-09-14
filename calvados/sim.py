@@ -759,7 +759,7 @@ class Sim:
                     platform
                 )
             simulation.context.setPositions(pdb.positions)
-            print(f'Minimizing energy.')
+            print('Minimizing energy.')
             simulation.minimizeEnergy()
 
         if self.box_eq or self.bilayer_eq:
