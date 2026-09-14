@@ -149,7 +149,7 @@ class Component:
     def add_bonds(self, offset: int) -> list[list[int]]:
         """Add component bonds and return their nonbonded exclusions."""
         exclusion_map = []  # for ah, yu etc.
-        for i in range(0, self.nbeads - 1):
+        for i in range(self.nbeads - 1):
             for j in range(i, self.nbeads):
                 if self.bond_check(i, j):
                     d = self.calc_bondlength(i, j)
@@ -174,10 +174,7 @@ class Component:
 
         with open(f"{path}/bonds_{self.name}.txt", "w") as f:
             f.write("i\tj\tb_idx\td[nm]\tk[kJ/mol/nm^2]\n")
-            for b in self.bond_pairlist:
-                f.write(
-                    f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n"
-                )
+            f.writelines(f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n" for b in self.bond_pairlist)
 
     @staticmethod
     def get_input_structure_file(pdb_folder: InputPath, name: str) -> str:
@@ -337,7 +334,7 @@ class Protein(Component):
         """Add protein restraints and return their nonbonded exclusions."""
         exclusion_map = []  # for ah, yu etc.
 
-        for i in range(0, self.nbeads - 2):
+        for i in range(self.nbeads - 2):
             for j in range(i + 2, self.nbeads):
                 # check if below cutoff
                 if self.dmap[i, j] > self.params.cutoff_restr:
@@ -394,23 +391,18 @@ class Protein(Component):
 
         with open(f"{path}/restr_{self.name}.txt", "w") as f:
             f.write("i j d[nm] fc\n")
-            for r in self.restr_pairlist:
-                f.write(f"{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f}\n")
+            f.writelines(f"{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f}\n" for r in self.restr_pairlist)
 
         if self.params.restraint_type == "go":
             with open(f"{path}/scaled_LJ_{self.name}.txt", "w") as f:
                 f.write(
                     "i+offset+1, j+offset+1, s, l, comp.bondscale[i,j]\n"
                 )  # 1-based
-                for r in self.scLJ_pairlist:
-                    f.write(
-                        f"{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}\n"
-                    )
+                f.writelines(f"{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f}\n" for r in self.scLJ_pairlist)
 
             with open(f"{path}/scaled_YU_{self.name}.txt", "w") as f:
                 f.write("i+offset+1, j+offset+1, comp.bondscale[i,j]\n")  # 1-based
-                for r in self.scYU_pairlist:
-                    f.write(f"{int(r[0])} {int(r[1])} {r[2]:.4f}\n")
+                f.writelines(f"{int(r[0])} {int(r[1])} {r[2]:.4f}\n" for r in self.scYU_pairlist)
 
     def get_forces(self) -> None:
         """Collect protein bond and restraint forces for the system."""
@@ -577,7 +569,7 @@ class RNA(Component):
         nbeads = len(self.xinit)
         angmap = np.zeros(nbeads)
         pos = self.xinit
-        for i in range(0, nbeads - 4, 2):
+        for i in range(nbeads - 4, 2):
             v1 = pos[i] - pos[i + 2]
             v2 = pos[i + 4] - pos[i + 2]
             v1_length = np.linalg.norm(v1)
@@ -647,7 +639,7 @@ class RNA(Component):
     def add_bonds(self, offset: int) -> list[list[int]]:
         """Add RNA bonds and neighboring-base forces and return exclusions."""
         exclusion_map = []
-        for i in range(0, self.nbeads - 1):
+        for i in range(self.nbeads - 1):
             for j in range(i, self.nbeads):
                 if self.bond_check(i, j):  # p-p and p-b
                     d = self.calc_bondlength(i, j)
@@ -687,7 +679,7 @@ class RNA(Component):
     def add_angles(self, offset: int) -> list[list[int]]:
         """Add RNA backbone angles and return their nonbonded exclusions."""
         exclusion_map = []
-        for i in range(0, self.nbeads - 1):
+        for i in range(self.nbeads - 1):
             for j in range(i, self.nbeads):
                 if self.angle_check(i, j):
                     rna_pa = self.calc_angle(i, j)
@@ -764,32 +756,22 @@ class RNA(Component):
 
         with open(f"{path}/bonds_{self.name}.txt", "w") as f:
             f.write("i\tj\tb_idx\td[nm]\tk[kJ/mol/nm^2]\n")
-            for b in self.bond_pairlist:
-                f.write(
-                    f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n"
-                )
+            f.writelines(f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\n" for b in self.bond_pairlist)
 
         with open(f"{path}/basebase_{self.name}.txt", "w") as f:
             f.write("i\tj\tb_idx\tsig\tlam\tn\n")
-            for b in self.basebase_pairlist:
-                f.write(
-                    f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\t{b[5]}\n"
-                )
+            f.writelines(f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{b[3]:.4f}\t{b[4]:.4f}\t{b[5]}\n" for b in self.basebase_pairlist)
 
         with open(f"{path}/angles_{self.name}.txt", "w") as f:
             f.write("i\tj\tk\ta_idx\ta[rad]\tk[kJ/mol/rad^2]\n")
-            for b in self.angle_list:
-                f.write(
-                    f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{int(b[3])}\t{b[4]:.4f}\t{b[5]:.4f}\n"
-                )
+            f.writelines(f"{int(b[0])}\t{int(b[1])}\t{int(b[2])}\t{int(b[3])}\t{b[4]:.4f}\t{b[5]:.4f}\n" for b in self.angle_list)
 
     def write_restraints(self, path: InputPath) -> None:
         """Write RNA restraint records to a file."""
 
         with open(f"{path}/restr_{self.name}.txt", "w") as f:
             f.write("i j d[nm] fc\n")
-            for r in self.restr_pairlist:
-                f.write(f"{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f}\n")
+            f.writelines(f"{int(r[0])} {int(r[1])} {r[2]:.4f} {r[3]:.4f}\n" for r in self.restr_pairlist)
 
 
 class Lipid(Component):
@@ -827,7 +809,7 @@ class Lipid(Component):
     def add_bonds(self, offset: int) -> list[Any]:
         """Add lipid bonds and angles and return nonbonded exclusions."""
         exclusion_map: list[Any] = []  # for ah, yu etc.
-        for i in range(0, self.nbeads - 1):
+        for i in range(self.nbeads - 1):
             for j in range(i, self.nbeads):
                 if self.bond_check(i, j):
                     d = self.calc_bondlength(i, j)
@@ -1018,10 +1000,7 @@ class PTMProtein(Protein):
                 return True
 
         # PTM-PTM bond
-        if i >= self.nbeads_protein:
-            if (j == i + 1) and (j not in ptm_seqlocs):  # avoid bonding different PTMs
-                return True
-        return False
+        return bool(i >= self.nbeads_protein and j == i + 1 and j not in ptm_seqlocs)
 
 COMPONENT_REGISTRY: dict[str, type[Component]] = {
     "protein": Protein,

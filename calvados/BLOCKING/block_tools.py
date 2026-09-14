@@ -4,7 +4,6 @@ from typing import TypeAlias, cast
 import numpy as np
 from numpy.typing import NDArray
 
-
 FloatArray: TypeAlias = NDArray[np.float64]
 IntArray: TypeAlias = NDArray[np.int_]
 
@@ -58,7 +57,7 @@ def blocking(array: FloatArray, multi: int = 1) -> FloatArray:
     """
     
     u = array.mean()
-    N, n_blocks, block_sizes = blocker(array, multi=multi)
+    _, n_blocks, block_sizes = blocker(array, multi=multi)
     
     errs = []
     errs_errs = []

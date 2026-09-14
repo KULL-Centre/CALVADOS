@@ -173,7 +173,7 @@ class Job:
     def submit(self, path: InputPath, njobs: int = 1) -> None:
         """Submit one or more jobs through the configured batch system."""
         if njobs > 1 and self.settings['batch_sys'] == 'PBS':
-            raise Exception('Only single jobs supported with PBS.')
+            raise ValueError('Only single jobs supported with PBS.')
         for idx in range(njobs):
             if self.settings['batch_sys'] == 'SLURM':
                 os.system(f'sbatch {path}/{self.jobname}')

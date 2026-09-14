@@ -1,7 +1,7 @@
 import os
-from collections.abc import Sequence
-from typing import Any, TypeAlias, cast
 import warnings
+from collections.abc import Sequence
+from typing import Any, Literal, TypeAlias, cast
 
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
@@ -187,7 +187,7 @@ def calc_wcn(
 
     if ssonly:
         ssdomains = get_ssdomains(comp.name, cast(InputPath, fdomains))
-        wcn = np.zeros((N))
+        wcn = np.zeros(N)
         for i in range(N-1):
             for j in range(i+1,N):
                 ss = False
@@ -271,7 +271,7 @@ def calc_fnc(
         sigmoid = np.exp(width*(bfacmat-sig_shift)) / (np.exp(width*(bfacmat-sig_shift)) + 1.)
     else:
         sigmoid = 1.
-    fnc = np.zeros((len(u.trajectory)))
+    fnc = np.zeros(len(u.trajectory))
     cref = calc_cmap(agref,agref,cutoff=cutoff)
     for k in range(-kmax,kmax+1): # kmax: diagonals to exclude (up to kmax bonds apart)
         cref -= np.diag(np.diag(cref,k=k),k=k) # delete trivial contacts (self and bonded)
@@ -597,7 +597,7 @@ class SlabAnalysis:
         start: int | None = None,
         end: int | None = None,
         step: int = 1,
-        center_target: str = "ref",
+        center_target: Literal["ref", "all"] = "ref",
     ) -> None:
         """Center and unwrap a slab trajectory around reference or all atoms.
 
@@ -617,8 +617,7 @@ class SlabAnalysis:
             ag_ref = u.atoms
             if self.verbose:
                 print('Using all chains for centering.')
-        else:
-            raise
+
         ag = u.atoms
         n_atoms = ag.n_atoms
         # create list of bonds
@@ -629,27 +628,23 @@ class SlabAnalysis:
                 bonds.extend([(i, i+1)])
         u.add_TopologyAttr('bonds', bonds)
 
-        # hs = np.zeros((n_frames,n_bins))
         with mda.Writer(f'{self.input_path}/{self.centered_dcd}', n_atoms) as W:
             for t,ts in tqdm(enumerate(u.trajectory[start:end:step]),total=n_frames):
                 # shift max density to center
                 zpos = ag_ref.positions.T[2]
-                h, e = np.histogram(zpos,bins=self.edges)
+                h, _ = np.histogram(zpos,bins=self.edges)
                 zmax = self.z[np.argmax(h)]
                 ag.translate(np.array([0,0,-zmax+0.5*self.lz]))
                 # wrap
                 ts = transformations.wrap(ag)(ts)
                 # shift weighted average of slab density to center
                 zpos = ag_ref.positions.T[2]
-                h, e = np.histogram(zpos, bins=self.edges)
+                h, _ = np.histogram(zpos, bins=self.edges)
                 zpatch, hpatch = self.calc_zpatch(self.z,h)
                 zmid = np.average(zpatch,weights=hpatch)
                 ag.translate(np.array([0,0,-zmid+0.5*self.lz]))
                 # wrap
                 ts = transformations.wrap(ag)(ts)
-                # zpos = ag_ref.positions.T[2]
-                # h, e = np.histogram(zpos,bins=self.edges)
-                # hs[t] = h
                 # make chains whole for trajectory output
                 ts = transformations.unwrap(ag)(ts)
                 W.write(ag)
@@ -683,7 +678,7 @@ class SlabAnalysis:
         for t,ts in enumerate(self.u.trajectory[start:end:step]):
             ts = transformations.wrap(self.ag_ref)(ts)
             zpos = self.ag_ref.positions.T[2]
-            h, e = np.histogram(zpos,bins=self.edges)
+            h, _ = np.histogram(zpos,bins=self.edges)
             h_ref[t] = h * conv_ref # mM
         if save_individual_profiles:
             np.save(f'{self.output_path}/{self.name}_{self.ref_name}_profile.npy', h_ref) # in mM
@@ -698,7 +693,7 @@ class SlabAnalysis:
             nbeads_sel = len(sg_sel[0].atoms)
             if self.verbose:
                 print(f'Client {i}: name {self.client_names[i]}; chains {first}-{last}; nbeads: {nbeads_sel}')
-            # print(nbeads_sel)
+
             conv_sel = 10/6.02214/nbeads_sel/volume*1e3 # conversion to mM
 
             h_sel = np.zeros((n_frames,self.n_bins))
@@ -706,7 +701,7 @@ class SlabAnalysis:
                 # wrap for density profile calculation
                 ts = transformations.wrap(ag_sel)(ts)
                 zpos = ag_sel.positions.T[2]
-                h, e = np.histogram(zpos,bins=self.edges)
+                h, _ = np.histogram(zpos,bins=self.edges)
                 h_sel[t] = h * conv_sel
 
             if save_individual_profiles:
@@ -865,8 +860,8 @@ class SlabAnalysis:
 
         z = np.array([0.,0.,1.])
 
-        bin_counts = np.zeros((int(self.lz)))
-        sz_binnned = np.zeros((int(self.lz)))
+        bin_counts = np.zeros(int(self.lz))
+        sz_binnned = np.zeros(int(self.lz))
 
         for idx, seg in tqdm(enumerate(self.ag_ref_per_chain),total=len(self.ag_ref_per_chain)):
             for t, ts in enumerate(self.u.trajectory[::step]):
@@ -876,7 +871,7 @@ class SlabAnalysis:
                 bead_positions = seg.positions[:,2]
                 sz_binnned, bin_counts = self.distribute_monomers(sz, sz_binnned, bin_counts, bead_positions, self.lz)
         
-        sz_m = np.zeros((int(self.lz)))
+        sz_m = np.zeros(int(self.lz))
         for bin_idx, sz in enumerate(sz_binnned):
             if bin_counts[bin_idx] == 0:
                 sz_m[bin_idx] = 0.
@@ -895,8 +890,8 @@ class SlabAnalysis:
         self.load_traj(centered=True, step=step)
         self.load_ref()
 
-        bin_counts = np.zeros((int(self.lz)))
-        rg2_binned = np.zeros((int(self.lz)))
+        bin_counts = np.zeros(int(self.lz))
+        rg2_binned = np.zeros(int(self.lz))
 
         for idx, seg in tqdm(enumerate(self.ag_ref_per_chain),total=len(self.ag_ref_per_chain)):
             for t,ts in enumerate(self.u.trajectory[::step]):
@@ -904,7 +899,7 @@ class SlabAnalysis:
                 bead_positions = seg.positions[:,2]
                 rg2_binned, bin_counts = self.distribute_monomers(rg2, rg2_binned, bin_counts, bead_positions, self.lz)
 
-        rg_m = np.zeros((int(self.lz)))
+        rg_m = np.zeros(int(self.lz))
 
         for bin_idx, rg2 in enumerate(rg2_binned):
             if bin_counts[bin_idx] == 0:

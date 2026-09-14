@@ -234,7 +234,7 @@ def build_xygrid(
     return np.array(xy)
 
 
-def build_xyzgrid(N: int | float, box: NDArray[np.float64]) -> NDArray[np.float64]:
+def build_xyzgrid(N: float, box: NDArray[np.float64]) -> NDArray[np.float64]:
     """Build a staggered three-dimensional grid."""
     r = box / np.sum(box)
     a = np.cbrt(N / np.prod(r))
@@ -469,11 +469,9 @@ def get_ssdomains(
         xs = []  # restraint residues of domain
         if isinstance(domain[0], list):
             for subdom in domain:
-                for x in range(subdom[0] - 1, subdom[1]):
-                    xs.append(x)
+                xs.extend(range(subdom[0] - 1, subdom[1]))
         else:
-            for x in range(domain[0] - 1, domain[1]):
-                xs.append(x)
+            xs.extend(range(domain[0] - 1, domain[1]))
         ssdomains.append(xs)  # converted from 1-based inclusive ranges
     return ssdomains
 

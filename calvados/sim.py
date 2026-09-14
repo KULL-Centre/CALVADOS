@@ -483,9 +483,8 @@ class Sim:
         # self.custom_restr_pairs = []
         self.cres = interactions.init_restraints(self.config.custom_restraint_type)
         for i, j, r, k in self.custom_restr_abs: # i, j, r, k
-            self.cres, restr_pair = interactions.add_single_restraint(
+            self.cres, _ = interactions.add_single_restraint(
                 self.cres, self.config.custom_restraint_type, r, k, i, j)
-            # self.custom_restr_pairs.append(restr_pair)
             exclusion_map.append([i,j])
         if exclude_nonbonded: # exclude cres when restraining
             self.add_exclusions(exclusion_map)
@@ -551,7 +550,7 @@ class Sim:
         """ Add external-potential restraints. """
 
         offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
-        for i in range(0,comp.nbeads):
+        for i in range(comp.nbeads):
             self.rcent.addParticle(i+offset)
 
     def add_mdtraj_topol(self, comp: Component) -> None:
@@ -628,7 +627,7 @@ class Sim:
         """Parse custom-restraint records while preserving one-based indices."""
         custom_restraints: list[Any] = []
         with open(fcustom_restraints,'r') as f:
-            for line in f.readlines():
+            for line in f:
                 spl = line.split('|')
                 i = spl[0].split()
                 j = spl[1].split()
@@ -673,7 +672,7 @@ class Sim:
                 self.system,
                 integrator,
                 platform,
-                dict(Threads=str(self.config.threads))
+                {"Threads": str(self.config.threads)}
             )
         else:
             if os.environ.get('CUDA_VISIBLE_DEVICES') is None:
@@ -705,7 +704,7 @@ class Sim:
                 print('Starting from new system configuration')
 
             if os.path.isfile(f'{self.path}/{self.config.sysname:s}.dcd'): # backup old dcd if not restarting from checkpoint
-                now = datetime.now()
+                now = datetime.now()  # noqa: DTZ005
                 dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
                 print(f'Backing up existing {self.path}/{self.config.sysname:s}.dcd to {self.path}/backup_{self.config.sysname:s}_{dt_string}.dcd')
                 os.system(f'mv {self.path}/{self.config.sysname:s}.dcd {self.path}/backup_{self.config.sysname:s}_{dt_string}.dcd')
@@ -749,7 +748,7 @@ class Sim:
                     self.system,
                     integrator,
                     platform,
-                    dict(Threads=str(self.config.threads))
+                    {"Threads": str(self.config.threads)}
                 )
             else:
                 simulation = app.simulation.Simulation(
@@ -808,7 +807,7 @@ class Sim:
                     self.system,
                     integrator,
                     platform,
-                    dict(Threads=str(self.config.threads)),
+                    {"Threads": str(self.config.threads)},
                 )
             else:
                 simulation = app.simulation.Simulation(
@@ -856,7 +855,7 @@ class Sim:
 
         simulation.saveCheckpoint(str(self.restart_path))
 
-        now = datetime.now()
+        now = datetime.now() # noqa
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
         state_final = simulation.context.getState(

@@ -102,7 +102,7 @@ class BlockAnalysis:
                 ).evaluate(x),
             )
 
-        N = int(len(self.x))
+        N = len(self.x)
         Nb = int(N / self.bs)
 
         weights = cast(FloatArray, self.w)
