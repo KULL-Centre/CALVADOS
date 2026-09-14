@@ -466,7 +466,7 @@ def get_ssdomains(
 
     ssdomains = []
     for domain in domains:
-        xs = []  # restraint residues of domain
+        xs: list[int] = []  # restraint residues of domain
         if isinstance(domain[0], list):
             for subdom in domain:
                 xs.extend(range(subdom[0] - 1, subdom[1]))

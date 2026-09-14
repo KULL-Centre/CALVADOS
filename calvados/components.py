@@ -569,7 +569,7 @@ class RNA(Component):
         nbeads = len(self.xinit)
         angmap = np.zeros(nbeads)
         pos = self.xinit
-        for i in range(nbeads - 4, 2):
+        for i in range(0, nbeads - 4, 2):
             v1 = pos[i] - pos[i + 2]
             v2 = pos[i + 4] - pos[i + 2]
             v1_length = np.linalg.norm(v1)
