@@ -36,7 +36,6 @@ config = Config(
   # RUNTIME SETTINGS
   wfreq = N_save, # dcd writing interval, 1 = 10 fs
   steps = N_frames*N_save, # number of simulation steps
-  runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CPU', # or CUDA
   restart = 'checkpoint',
   frestart = 'restart.chk',
@@ -74,4 +73,3 @@ components.add(name=args.name_1)
 components.add(name=args.name_2)
 
 components.write(path,name='components.yaml')
-

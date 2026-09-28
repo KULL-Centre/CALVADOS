@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "calvados"
+version = "0.9.0"
+description = "Coarse-grained implicit-solvent simulations of biomolecules"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "GPL-3.0-only"
+authors = [
+    { name = "Soren von Bulow", email = "soren.bulow@bio.ku.dk" },
+    { name = "Giulio Tesei", email = "giulio.tesei@bio.ku.dk" },
+    { name = "Fan Cao", email = "fan.cao@bio.ku.dk" },
+    { name = "Kresten Lindorff-Larsen", email = "lindorff@bio.ku.dk" },
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "openmm[cuda12]>=8.2,<8.5",
+    "MDAnalysis>=2.9,<2.11",
+    "mdtraj>=1.11,<1.12",
+    "numpy",
+    "pandas",
+    "biopython",
+    "Jinja2",
+    "tqdm",
+    "matplotlib",
+    "PyYAML",
+    "pydantic>=2,<3",
+    "statsmodels",
+    "numba",
+    "scipy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7,<9",
+    "pytest-cov>=4,<8",
+    "mypy>=1.10,<2",
+    "ruff>=0.4,<1",
+    "types-PyYAML",
+]
+
+[project.urls]
+Homepage = "https://github.com/KULL-Centre/CALVADOS"
+
+[tool.setuptools.packages.find]
+include = ["calvados*"]
+
+[tool.setuptools.package-data]
+calvados = [
+    "data/*.csv",
+    "data/*.yaml",
+    "data/templates/*",
+]

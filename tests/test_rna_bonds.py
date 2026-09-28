@@ -1,14 +1,12 @@
-import pytest
-import numpy as np
-import os
-import pandas as pd
-from calvados.cfg import Config, Job, Components
-from calvados import sim
-import subprocess
-import numpy as np
-import mdtraj as md
+from pathlib import Path
 
 import openmm
+import pytest
+
+from calvados import sim
+from calvados.cfg import Components, Config
+
+TEST_DATA = Path(__file__).parent / "data"
 
 def bond_check(i: int, j: int):
     """ Define bonded term conditions. """
@@ -27,10 +25,7 @@ def bond_check(i: int, j: int):
     ],
 )
 
-def test_bonds(name,molecule_type):
-
-    cwd = os.getcwd()
-
+def test_bonds(name, molecule_type, tmp_path: Path):
     sysname = f'{name:s}'
 
     # set the side length of the cubic box
@@ -48,8 +43,8 @@ def test_bonds(name,molecule_type):
     # set final number of frames to save
     N_frames = 10
 
-    residues_file = f'{cwd}/tests/data/residues_C2RNA.csv'
-    fasta_file = f'{cwd}/tests/data/fastalib.fasta'
+    residues_file = TEST_DATA / "residues_C2RNA.csv"
+    fasta_file = TEST_DATA / "fastalib.fasta"
 
     config = Config(
     # GENERAL
@@ -72,17 +67,16 @@ def test_bonds(name,molecule_type):
     )
 
     # PATH
-    path = f'{cwd}/tests/data/{sysname:s}'
-
-    subprocess.run(f'mkdir -p {path}',shell=True)
+    path = tmp_path / sysname
+    path.mkdir()
 
     config.write(path,name='config.yaml')
 
     components = Components(
     # Defaults
     nmol = 1, # number of molecules
-    fresidues = residues_file, # residue definitions
-    ffasta = fasta_file, # domain definitions (harmonic restraints)
+    fresidues = str(residues_file), # residue definitions
+    ffasta = str(fasta_file), # domain definitions (harmonic restraints)
     restraint = False,
     charge_termini = 'none',
     )
@@ -92,7 +86,9 @@ def test_bonds(name,molecule_type):
 
     sim.run(path=path,fconfig='config.yaml',fcomponents='components.yaml')
 
-    system = openmm.XmlSerializer.deserialize(open(f"{cwd}/tests/data/{sysname}/{sysname}.xml").read())
+    system = openmm.XmlSerializer.deserialize(
+        (path / f"{sysname}.xml").read_text()
+    )
 
     force = system.getForces()[2]
     N = force.getNumBonds()

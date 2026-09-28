@@ -27,13 +27,12 @@ config = Config(
   pH = 7,
   topol = 'slab',
   slab_width = 20,
-  friction = 0.01,
+  friction_coeff = 0.01,
 
   # RUNTIME SETTINGS
   gpu_id = args.gpu_id,
   wfreq = N_save, # dcd writing frequency, 1 = 10fs
   steps = N_frames*N_save, # number of simulation steps
-  runtime = 0, # overwrites 'steps' keyword if > 0
   platform = 'CPU', # 'CUDA'
   restart = 'checkpoint',
   frestart = 'restart.chk',
@@ -80,4 +79,3 @@ components = Components(
 components.add(name=args.name, nmol=100)
 
 components.write(path,name='components.yaml')
-
