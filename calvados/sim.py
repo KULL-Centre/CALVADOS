@@ -175,6 +175,7 @@ class Sim:
         # make components
         self.make_components()
         self.count_components()
+        self.reorder_components()
 
         # init interactions
         self.ah, self.yu = interactions.init_nonbonded_interactions(
