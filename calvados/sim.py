@@ -704,7 +704,7 @@ class Sim:
                 print('Starting from new system configuration')
 
             if os.path.isfile(f'{self.path}/{self.config.sysname:s}.dcd'): # backup old dcd if not restarting from checkpoint
-                now = datetime.now()  # noqa: DTZ005
+                now = datetime.now()
                 dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
                 print(f'Backing up existing {self.path}/{self.config.sysname:s}.dcd to {self.path}/backup_{self.config.sysname:s}_{dt_string}.dcd')
                 os.system(f'mv {self.path}/{self.config.sysname:s}.dcd {self.path}/backup_{self.config.sysname:s}_{dt_string}.dcd')
@@ -855,7 +855,7 @@ class Sim:
 
         simulation.saveCheckpoint(str(self.restart_path))
 
-        now = datetime.now() # noqa
+        now = datetime.now()
         dt_string = now.strftime("%Y%d%m_%Hh%Mm%Ss")
 
         state_final = simulation.context.getState(

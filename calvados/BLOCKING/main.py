@@ -33,7 +33,7 @@ class BlockAnalysis:
         self.x = check(x, self.multi)
         self.w = weights
         
-        self.interval = [self.x.min(), self.x.max()]
+        self.interval = [float(self.x.min()), float(self.x.max())]
         if (interval_low is not None) and (self.x.min() < interval_low):
             self.interval[0] = interval_low
         if (interval_up is not None) and (self.x.max() > interval_up):

@@ -263,6 +263,7 @@ def calc_fnc(
     agref = uref.select_atoms(selstr)
     ag = u.select_atoms(selstr)
 
+    sigmoid: FloatArray | float
     if len(bfac) > 0:
         x0 = agref.indices[0]
         x1 = agref.indices[-1]+1

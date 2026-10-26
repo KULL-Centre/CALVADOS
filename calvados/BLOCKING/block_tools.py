@@ -126,4 +126,4 @@ def autocorrelation(x: FloatArray) -> FloatArray:
     x = x-x.mean()
     r = np.correlate(x, x, mode = 'full')[-n:]
     result = r/(variance*(np.arange(n, 0, -1)))
-    return cast(FloatArray, result)
+    return np.asarray(result, dtype=np.float64)
