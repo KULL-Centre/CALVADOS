@@ -43,6 +43,22 @@ def test_calc_zpatch_includes_patch_at_final_bin() -> None:
     np.testing.assert_array_equal(hpatch, [2, 3])
 
 
+@pytest.mark.parametrize("lz", [2048.0, 2500.0])
+def test_calc_z_nm_centered_matches_angstrom_bins_for_float32_box(
+    lz: float,
+) -> None:
+    universe = SimpleNamespace(
+        dimensions=np.array([100.0, 100.0, lz], dtype=np.float32)
+    )
+
+    _, edges, z = analysis.SlabAnalysis.calc_z_Angstr(universe)
+    _, edges_nm, z_nm = analysis.SlabAnalysis.calc_z_nm_centered(universe)
+
+    assert len(edges_nm) == len(edges)
+    assert len(z_nm) == len(z)
+    np.testing.assert_allclose(z_nm * 10, z - lz / 2.0, atol=1e-3)
+
+
 def test_calc_com_traj_uses_configured_input_and_step(tmp_path: Path) -> None:
     topology = md.Topology()
     chain = topology.add_chain()
