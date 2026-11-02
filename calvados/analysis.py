@@ -1103,7 +1103,7 @@ class SlabAnalysis:
     def calc_z_nm_centered(u: Any) -> tuple[float, FloatArray, FloatArray]:
         """Return box length in Å and centered z-bin edges and centers in nm."""
         lz = u.dimensions[2]
-        edges = np.arange(-lz/2.,lz/2.+0.0001,1)/10
+        edges = (np.arange(0,lz+1,1) - lz/2.)/10 # same edges as calc_z_Angstr
         dz = (edges[1] - edges[0]) / 2.
         z = edges[:-1] + dz
         return lz, edges, z
