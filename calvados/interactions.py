@@ -23,13 +23,28 @@ def init_bonded_interactions():
 
     return hb
 
-def init_ah_interactions(eps,rc,fixed_lambda):
-    """ Define Ashbaugh-Hatch interactions. """
+def init_wca_interactions(eps, rc):
 
-    # intermolecular interactions
-    energy_expression = f'{eps}*select(step(r-2^(1/6)*s),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
-    #ah = openmm.CustomNonbondedForce(energy_expression+f'; s=0.5*(s1+s2); l=0.5*(l1+l2); shift=(0.5*(s1+s2)/{rc})^12-(0.5*(s1+s2)/{rc})^6')
-    ah = openmm.CustomNonbondedForce(energy_expression+f'; l=select((id1+id2)*step(id1+id2),0.5*(l1+l2),{fixed_lambda}); shift=(s/{rc})^12-(s/{rc})^6; s=0.5*(s1+s2)')
+    energy_expression = f'4*{eps}*((s/r)^12-(s/r)^6+0.25)*step(rmin-r)'
+    energy_expression += '; rmin=2^(1/6)*s; s=0.5*(s1+s2)'
+
+    wca = openmm.CustomNonbondedForce(energy_expression)
+
+    wca.addPerParticleParameter('s')
+
+    wca.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
+    wca.setCutoffDistance(rc*unit.nanometer)
+
+    return wca
+
+def init_ah_interactions(eps, rc, fixed_lambda):
+    """ Define full Ashbaugh-Hatch interactions. """
+
+    energy_expression = f'{eps}*select(step(r-rmin),4*l*((s/r)^12-(s/r)^6-shift),4*((s/r)^12-(s/r)^6-l*shift)+(1-l))'
+    energy_expression += f'; shift=(s/{rc})^12-(s/{rc})^6; rmin=2^(1/6)*s'
+    energy_expression += f'; s=0.5*(s1+s2); l=select((id1+id2)*step(id1+id2),0.5*(l1+l2),{fixed_lambda})'
+
+    ah = openmm.CustomNonbondedForce(energy_expression)
 
     ah.addPerParticleParameter('s')
     ah.addPerParticleParameter('l')
@@ -37,11 +52,42 @@ def init_ah_interactions(eps,rc,fixed_lambda):
 
     ah.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
     ah.setCutoffDistance(rc*unit.nanometer)
-    #ah.setForceGroup(0)
 
-    print('Ashbaugh-Hatch potential between particles with lambda=1 and sigma=0.68 at',rc*unit.nanometer,end=': ')
-    print(4*eps*((0.68/rc)**12-(0.68/rc)**6)*unit.kilojoules_per_mole)
     return ah
+
+def init_ah_lipid_interactions(eps,rc):
+    """ Define Ashbaugh-Hatch interactions. """
+
+    # intermolecular interactions
+    energy_expression = f'{eps}*select(step(r-rmin),4*l*((s/r)^12-(s/r)^6),4*((s/r)^12-(s/r)^6+0.25)-l)'
+    energy_expression += f'; shift=(s/{rc})^12-(s/{rc})^6; rmin=2^(1/6)*s'
+    energy_expression += '; s=0.5*(s1+s2); l=sqrt(l1*l2)'
+    ah = openmm.CustomNonbondedForce(energy_expression)
+
+    ah.addPerParticleParameter('s')
+    ah.addPerParticleParameter('l')
+
+    ah.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
+    ah.setCutoffDistance(rc*unit.nanometer)
+
+    return ah
+
+def init_sa_interactions(eps, rc):
+
+    energy_expression = f'{eps}*select(step(r-rmin),l*(3*u^2-2*u^3-1)*step(rmin+o-r),4*((s/r)^12-(s/r)^6+0.25)-l)'
+    energy_expression += '; u=(r-rmin)/o; rmin=2^(1/6)*s'
+    energy_expression += '; s=0.5*(s1+s2); l=sqrt(l1*l2); o=sqrt(o1*o2)'
+
+    sa = openmm.CustomNonbondedForce(energy_expression)
+
+    sa.addPerParticleParameter('s')
+    sa.addPerParticleParameter('l')
+    sa.addPerParticleParameter('o')
+
+    sa.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
+    sa.setCutoffDistance(rc*unit.nanometer)
+
+    return sa
 
 def init_yu_interactions(eps, k, rc):
     """ Define Yukawa interactions. """
@@ -63,6 +109,13 @@ def init_angles():
     ha = openmm.HarmonicAngleForce()
     ha.setUsesPeriodicBoundaryConditions(True)
     return ha
+
+def init_pmf_force(u, Lz):
+    table = openmm.Continuous1DFunction(list(map(float, u)), -Lz/2., Lz/2., True)
+    f = openmm.CustomCentroidBondForce(2, f'pmf(dz); dz=z1-z2-{Lz}*floor((z1-z2)/{Lz}+0.5)')
+    f.addTabulatedFunction('pmf', table)
+    f.setUsesPeriodicBoundaryConditions(True)
+    return f
 
 def init_wcafene(eps_lj):
     wcafene = init_wcafene_interactions(3*eps_lj)

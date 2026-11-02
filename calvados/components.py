@@ -57,7 +57,10 @@ class Component:
             self.qs, _ = get_qs(self.seq,flexhis=True,pH=pH,residues=self.residues)
         else:
             self.qs = np.load(self.fcharges)
-        self.omegas = np.array([self.residues.loc[s].omega for s in self.seq])
+        if 'omega' in self.residues.columns:
+            self.omegas = np.array([self.residues.loc[s].omega for s in self.seq])
+        if 'TMT' in self.residues.columns:
+            self.tmt = np.array([self.residues.loc[s].TMT for s in self.seq])
         self.init_bond_force()
 
     def calc_dmap(self):

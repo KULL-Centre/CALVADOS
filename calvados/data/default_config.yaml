@@ -44,3 +44,6 @@ gpu_precision: 'mixed'
 custom_restraints : false
 custom_restraint_type : 'harmonic'
 fcustom_restraints : 'custom_restraints.txt'
+
+pmf_force : false
+fpmf : 'pmf.npy'

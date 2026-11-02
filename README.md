@@ -4,7 +4,7 @@ This repository contains a branch of the CALVADOS package that implements the ME
 
 Please cite the following references when using the software:
 
-- R. Saltutti, G. Tesei. MEM-CALVADOS: A residue-level model for flexible proteins at membrane interfaces.
+- R. Saltutti, G. Tesei. MEM-CALVADOS: A residue-level model for flexible proteins at membrane interfaces. _bioRxiv_ (2026) [DOI: 10.64898/2026.08.12.743853](https://doi.org/10.64898/2026.08.12.743853)
 - S. von Bülow, K. Johansson, K. Lindorff-Larsen. AF-CALVADOS: AlphaFold-guided simulations of multi-domain proteins at the proteome level. _Protein Science_ (2026), 35: e70694.
 - F. Cao, S. von Bülow, G. Tesei, K. Lindorff-Larsen. A coarse-grained model for disordered and multi-domain proteins. _Protein Science_ (2024), 33(11):e5172. [DOI: 10.1002/pro.5172](https://doi.org/10.1002/pro.5172)
 - G. Tesei, K. Lindorff-Larsen. Improved predictions of phase behaviour of intrinsically disordered proteins by tuning the interaction range. _Open Research Europe_ (2022), 2(94). [DOI: 10.12688/openreseurope.14967.2](https://doi.org/10.12688/openreseurope.14967.2)
@@ -37,7 +37,6 @@ conda install -c conda-forge openmm=8.2.0 cudatoolkit=11.8 mdanalysis=2.9 mdtraj
 ``` 
 git clone https://github.com/KULL-Centre/CALVADOS.git
 cd CALVADOS
-git checkout mem-calvados
 pip install .
 (or pip install -e .)
 ```

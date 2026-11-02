@@ -192,6 +192,16 @@ def calc_cmap(domain0,domain1,cutoff=1.0):
      cmap = .5 - .5*np.tanh((dmap-cutoff)/.3)
      return(cmap)
 
+def calc_cmap_dmin(domain0, domain1, cutoff=1.0):
+    """Contact map and minimum distance for a single configuration."""
+
+    dmap = calc_dmap(domain0, domain1)
+
+    dmin = np.min(dmap)
+    cmap = 0.5 - 0.5 * np.tanh((dmap - cutoff) / 0.3)
+
+    return cmap, dmin
+
 def cmap_traj(u,domain0,domain1,cutoff=1.0,start=None,end=None,step=1):
     """ Average number of contacts along trajectory
 
@@ -903,27 +913,125 @@ def calc_com_profiles(path,sysname,output_path,residues_file,chainid_dict={},sta
     for chain_name in chain_prop.keys():
         np.save(output_path+f'/{sysname:s}_{chain_name:s}_com_profiles.npy',{k: chain_prop[chain_name][k] for k in keys})
 
+def calc_chain_pair_cmaps(u,chain_pairs,cmap_cutoff):
+    cmap = np.zeros((len(chain_pairs[0][0].atoms), len(chain_pairs[0][1].atoms)))
+    bin_edges = np.arange(0, cmap.size + 2) - 0.5
+    n_contacts_t = []
+    h_contacts_t = []
+    for ts in u.trajectory:
+        frame_cmap = np.zeros_like(cmap)
+        n_contacts_pair = []
+        for seg1, seg2 in chain_pairs:
+            pair_cmap = calc_cmap(seg1.atoms, seg2.atoms, cmap_cutoff)
+            frame_cmap += pair_cmap
+            n_contacts_pair.append(pair_cmap.sum())
+        cmap += frame_cmap
+        n_contacts_t.append(np.sum(frame_cmap))
+        h_contacts_t.append(np.histogram(n_contacts_pair, bins=bin_edges)[0])
+    cmap /= len(u.trajectory) 
+    return cmap, np.array(n_contacts_t), h_contacts_t
+
 def cmap_chain_pairs(path,sysname,output_path,chainid_dict,input_pdb="top.pdb",cmap_cutoff=1.0):
+    u = mda.Universe(f"{path}/{input_pdb}", f"{path}/traj.dcd")
+    for key1, key2 in combinations(chainid_dict.keys(), 2):
+        segs_1 = u.segments[chainid_dict[key1][0]:chainid_dict[key1][1] + 1]
+        segs_2 = u.segments[chainid_dict[key2][0]:chainid_dict[key2][1] + 1]
+        chain_pairs = [(seg1,seg2) for seg1 in segs_1 for seg2 in segs_2]
+        cmap, n_contacts_t, h_contacts_t = calc_chain_pair_cmaps(u,chain_pairs,cmap_cutoff)
+        np.save(output_path+f"/{sysname}_{key1}_{key2}_cmap.npy", cmap)
+        np.save(output_path+f"/{sysname}_{key1}_{key2}_contacts.npy", n_contacts_t)
+        np.save(output_path+f"/{sysname}_{key1}_{key2}_hist.npy", np.mean(h_contacts_t,axis=0))
+    for key in chainid_dict.keys():
+        segs = u.segments[chainid_dict[key][0]:chainid_dict[key][1] + 1]
+        if len(segs) < 2:
+            continue
+        chain_pairs = list(combinations(segs, 2))
+        cmap, n_contacts_t, h_contacts_t = calc_chain_pair_cmaps(u,chain_pairs,cmap_cutoff)
+        np.save(output_path+f"/{sysname}_{key}_{key}_cmap.npy", cmap)
+        np.save(output_path+f"/{sysname}_{key}_{key}_contacts.npy", n_contacts_t)
+        np.save(output_path+f"/{sysname}_{key}_{key}_hist.npy", np.mean(h_contacts_t,axis=0))
+
+def calc_surface_density_hist(path,sysname,output_path,resid=15,input_pdb="top.pdb",
+                              bins_xy=35,saving_interval=1.0):
+    u = mda.Universe(f"{path}/{input_pdb}", f"{path}/traj.dcd")
+    anchors = u.select_atoms(f"resid {resid}")
+    rho_frames = []
+    times = []
+    for i, ts in enumerate(u.trajectory):
+        Lx, Ly = ts.dimensions[:2] / 10.0
+        xy = anchors.positions[:,:2] / 10.0
+        H, _, _ = np.histogram2d(
+            xy[:,0],xy[:,1],
+            bins=bins_xy,
+            range=[[0,Lx],[0,Ly]])
+        rho = H / ((Lx/bins_xy)*(Ly/bins_xy))
+        rho_frames.append(rho.ravel())
+        times.append(i*saving_interval)
+    rho_max = max(r.max() for r in rho_frames)
+    edges = np.arange(0,rho_max+1.5,0.5)
+    hist = np.array([np.histogram(r,bins=edges,density=True)[0] for r in rho_frames])
+    np.save(output_path+f"/{sysname}_surface_density_hist.npy",hist)
+    np.save(output_path+f"/{sysname}_surface_density_edges.npy",edges)
+    np.save(output_path+f"/{sysname}_surface_density_time.npy",np.array(times))
+
+def count_bridging_chains(path, sysname, output_path, chainid_dict,
+                          bridge_key, input_pdb="top.pdb", cmap_cutoff=1.0):
 
     u = mda.Universe(f"{path}/{input_pdb}", f"{path}/traj.dcd")
-    n_frames = len(u.trajectory)
+    u_com = mda.Universe(f"{output_path}/{sysname}_com_top.pdb", 
+                         f"{output_path}/{sysname}_com_traj.dcd")
 
-    for key1, key2 in combinations(chainid_dict.keys(), 2):
-        ag_1 = u.segments[chainid_dict[key1][0]:chainid_dict[key1][1] + 1].atoms
-        ag_2 = u.segments[chainid_dict[key2][0]:chainid_dict[key2][1] + 1].atoms
+    other_keys = [key for key in chainid_dict if key != bridge_key]
+    if len(chainid_dict) != 3 or len(other_keys) != 2:
+        raise ValueError("chainid_dict must contain exactly three chain types.")
 
-        cmap = np.zeros((len(ag_1), len(ag_2)))
-        n_contacts_t = []
+    key_b, key_c = other_keys
 
-        for ts in u.trajectory:
-            frame_cmap = calc_cmap(ag_1, ag_2, cmap_cutoff)
-            cmap += frame_cmap
-            n_contacts_t.append(np.sum(frame_cmap))
+    def get_chains(key):
+        start, stop = chainid_dict[key]
+        return [u.segments[i].atoms for i in range(start, stop + 1)]
 
-        cmap /= n_frames
+    def get_com_indices(key):
+        start, stop = chainid_dict[key]
+        return list(range(start, stop + 1))
 
-        np.save(output_path+f"/{sysname}_{key1}_{key2}_cmap.npy", cmap)
-        np.save(output_path+f"/{sysname}_{key1}_{key2}_contacts.npy", np.array(n_contacts_t))
+    chains_a = get_chains(bridge_key)
+    chains_b = get_chains(key_b)
+    chains_c = get_chains(key_c)
+    
+    com_indices_a = get_com_indices(bridge_key)
+
+    n_bridging_t = []
+    fraction_bridging_t = []
+    bridge_matrix = np.zeros((len(u.trajectory), len(chains_a)), dtype=bool)
+
+    for frame, ts in enumerate(u.trajectory):
+        u_com.trajectory[frame]  # Sync COM universe to same frame
+        
+        for i, chain_a in enumerate(chains_a):
+            # Get COM z-component for this chain_a
+            com_z = u_com.atoms[com_indices_a[i]].position[2]
+            
+            # Only count contacts if z < 0
+            if com_z < 0:
+                contacts_b = any(np.any(calc_cmap(chain_a, chain_b, cmap_cutoff))
+                                 for chain_b in chains_b)
+
+                contacts_c = any(np.any(calc_cmap(chain_a, chain_c, cmap_cutoff))
+                                 for chain_c in chains_c)
+
+                bridge_matrix[frame, i] = contacts_b and contacts_c
+            else:
+                bridge_matrix[frame, i] = False
+
+        n_bridging_t.append(bridge_matrix[frame].sum())
+        fraction_bridging_t.append(bridge_matrix[frame].mean())
+
+    prefix = f"{output_path}/{sysname}_{bridge_key}_bridging_{key_b}_{key_c}"
+
+    np.save(f"{prefix}_matrix.npy", bridge_matrix)
+    np.save(f"{prefix}_count.npy", np.asarray(n_bridging_t))
+    np.save(f"{prefix}_fraction.npy", np.asarray(fraction_bridging_t))
 
 def cmap_selection(path, sysname, output_path, indexrange_dict, input_pdb="top.pdb", cmap_cutoff=1.0, binary=False):
 
@@ -936,18 +1044,21 @@ def cmap_selection(path, sysname, output_path, indexrange_dict, input_pdb="top.p
 
         cmap = np.zeros((len(ag_1), len(ag_2)))
         n_contacts_t = []
+        dmin_t = []
 
         for ts in u.trajectory:
-            frame_cmap = calc_cmap(ag_1, ag_2, cmap_cutoff)
+            frame_cmap, frame_dmin = calc_cmap_dmin(ag_1, ag_2, cmap_cutoff)
             if binary:
                 frame_cmap = (frame_cmap > 0.5).astype(float)
             cmap += frame_cmap
             n_contacts_t.append(np.sum(frame_cmap))
+            dmin_t.append(frame_dmin)
 
         cmap /= n_frames
 
         np.save(f"{output_path}/{sysname}_{key}_cmap.npy", cmap)
         np.save(f"{output_path}/{sysname}_{key}_contacts.npy", np.array(n_contacts_t))
+        np.save(f"{output_path}/{sysname}_{key}_dmin.npy", np.array(dmin_t))
 
 def calc_com_traj(path,sysname,output_path,residues_file,chainid_dict={},start=None,end=None,step=1,input_pdb='top.pdb'):
     """
@@ -1126,15 +1237,83 @@ def calc_contact_map(path,sysname,output_path,chainid_dict={},is_slab=False,inpu
     # save energy and contact maps
     np.save(output_path+f'/{sysname:s}_{name_1:s}_{name_2:s}_cmap.npy',cmap)
 
-def calc_bilayer_prop(path,sysname,output_path,input_pdb='top.pdb'):
+def calc_bilayer_prop(path,sysname,output_path,residues_file,start=0,stop=-1,
+        ref_sel="resname TDO or resname TPO",input_pdb='top.pdb'):
     """
     Calculate bilayer properties.
 
     """
+    df_residues = pd.read_csv(residues_file, index_col=0)
+    three_to_one = dict(zip(df_residues["three"].values, df_residues.index.values))
+    u = mda.Universe(f"{path}/top.pdb", f"{path}/{sysname}.dcd")
+
+    ref = u.select_atoms(ref_sel)
+    all_ag = u.atoms
+
+    seq = [three_to_one[res.resname] if len(res.resname)==3 else res.resname for res in u.residues]
+    masses = get_masses(seq, df_residues, charge_termini=True)
+    u.add_TopologyAttr("masses", masses)
+
+    bonds = []
+    for seg in u.segments:
+        idx = seg.atoms.indices
+        bonds += [(int(i), int(j)) for i, j in zip(idx[:-1], idx[1:])]
+    u.add_TopologyAttr("bonds", bonds)
+
+    def calc_zpatch(z,h):
+        cutoff = 0
+        ct = 0.
+        ct_max = 0.
+        zwindow = []
+        hwindow = []
+        zpatch = []
+        hpatch = []
+        for ix, x in enumerate(h):
+            if x > cutoff:
+                ct += x
+                zwindow.append(z[ix])
+                hwindow.append(x)
+            else:
+                if ct > ct_max:
+                    ct_max = ct
+                    zpatch = zwindow
+                    hpatch = hwindow
+                ct = 0.
+                zwindow = []
+                hwindow = []
+        zpatch = np.array(zpatch)
+        hpatch = np.array(hpatch)
+        # catch a patch that reaches the last histogram bin
+        if ct > ct_max:
+            zpatch = zwindow
+            hpatch = hwindow
+        return zpatch, hpatch
+
+    def center_membrane(ts):
+        Lx, Ly, Lz = ts.dimensions[:3]
+
+        edges = np.arange(0.0, Lz + 1.0, 1.0)
+        z = edges[:-1] + 0.5
+        h, _ = np.histogram(ref.positions[:, 2] % Lz, bins=edges)
+        zpatch, hpatch = calc_zpatch(z, h)
+        zmid = np.average(zpatch, weights=hpatch)
+
+        all_ag.translate(np.array([0.0, 0.0, -zmid + 0.5 * Lz]))
+        transformations.wrap(all_ag, compound="segments")(ts)
+        return ts
+
+    u.trajectory.add_transformations(center_membrane)
+
+    centered_all = f"{path}/traj.dcd"
+    with mda.Writer(centered_all, all_ag.n_atoms) as W:
+        for ts in u.trajectory[start:stop]:
+            W.write(all_ag)
+
     traj = md.load_dcd(f'{path:s}/traj.dcd',top=f'{path:s}/'+input_pdb)
 
     # area per lipid
     area = traj.unitcell_lengths[:,0]*traj.unitcell_lengths[:,1]
+    np.save(output_path+f'/{sysname:s}_lx.npy',traj.unitcell_lengths[:, 0])
     mid_beads = traj.top.select('resname MID')
     n_lipids = mid_beads.size
     area_per_lipid = area/n_lipids*2
@@ -1158,7 +1337,7 @@ def calc_bilayer_prop(path,sysname,output_path,input_pdb='top.pdb'):
     z = edges[:-1] + dz
 
     t_pho = traj.atom_slice(traj.top.select('resname PHO'))
-    h_pho = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_pho.xyz[:,:,2])/area.mean()
+    h_pho = np.apply_along_axis(lambda a: np.histogram(a,bins=edges/10)[0], 1, t_pho.xyz[:,:,2]) / area[:, None]
 
     d_pho_pho = np.empty(0)
     for h in h_pho:
@@ -1185,16 +1364,9 @@ def calc_bilayer_prop(path,sysname,output_path,input_pdb='top.pdb'):
     df_analysis.loc['order','error'] = block_order.sem
     df_analysis.to_csv(output_path+f'/{sysname:s}_bilayer_prop.csv')
 
-def calc_membrane_profiles(
-    path,
-    sysname,
-    output_path,
-    residues_file,
-    tmd_sel,
-    start=0,
-    ref_sel="resname TDO or resname TPO",
-    strip_sel="not (resname CHO or resname PHO or resname MID or resname TDO or resname TPO)",
-):
+def calc_membrane_profiles(path,sysname,output_path,residues_file,tmd_sel,
+        start=0,stop=-1,ref_sel="resname TDO or resname TPO",
+        strip_sel="not (resname CHO or resname PHO or resname MID or resname TDO or resname TPO)"):
     df_residues = pd.read_csv(residues_file, index_col=0)
     three_to_one = dict(zip(df_residues["three"].values, df_residues.index.values))
     u = mda.Universe(f"{path}/top.pdb", f"{path}/{sysname}.dcd")
@@ -1237,6 +1409,10 @@ def calc_membrane_profiles(
                 hwindow = []
         zpatch = np.array(zpatch)
         hpatch = np.array(hpatch)
+        # catch a patch that reaches the last histogram bin
+        if ct > ct_max:
+            zpatch = zwindow
+            hpatch = hwindow
         return zpatch, hpatch
 
     def center_membrane_and_tmd(ts):
@@ -1262,7 +1438,7 @@ def calc_membrane_profiles(
 
     centered_all = f"{path}/traj.dcd"
     with mda.Writer(centered_all, all_ag.n_atoms) as W:
-        for ts in u.trajectory[start:]:
+        for ts in u.trajectory[start:stop]:
             W.write(all_ag)
 
     u_prot = mda.Universe(f"{path}/top.pdb", centered_all)
@@ -1322,6 +1498,11 @@ def calc_domain_angles(path, sysname, output_path, angle_sels, residues_file, sa
 
         return np.append(angles, w[np.argsort(w)])
 
+    def _vector_angle_to_z(pos1, pos2):
+        v = pos2 - pos1
+        v /= np.linalg.norm(v)
+        return np.degrees(np.arccos(np.clip(v[2], -1.0, 1.0)))
+
     u = mda.Universe(f"{path}/prot_CG.pdb", f"{path}/prot_CG.dcd", in_memory=True)
     prot = u.atoms
     angle_domains = {name: u.select_atoms(sel) for name, sel in angle_sels.items()}
@@ -1347,7 +1528,10 @@ def calc_domain_angles(path, sysname, output_path, angle_sels, residues_file, sa
         M2 += delta * (dz - mean)
 
         for name, ag in angle_domains.items():
-            angles[name].append(_domain_angle_to_z(ag.positions, masses[ag.indices]))
+            if ag.n_atoms == 2:
+                angles[name].append(_vector_angle_to_z(*ag.positions))
+            else:
+                angles[name].append(_domain_angle_to_z(ag.positions, masses[ag.indices]))
 
         times.append((n-1) * saving_interval)
 
