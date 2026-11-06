@@ -980,7 +980,7 @@ class PTMProtein(Protein):
             self.seq = self.seq + self.ptm_seq
 
         self.n_termini = [0]
-        self.c_termini = [len(self.seq) - 1]
+        self.c_termini = [self.nbeads_protein - 1]
 
     def bond_check(self, i: int, j: int) -> bool:
         """Return whether two protein or PTM beads should be bonded."""
